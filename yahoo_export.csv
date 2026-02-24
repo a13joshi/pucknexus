@@ -1,0 +1,122 @@
+player_id,name,position_type,eligible_positions,status,selected_position,Status,percent_owned
+6390,Jared McCann,P,"['C', 'LW', 'F', 'Util']",,C,Rostered,
+9306,Fraser Minten,P,"['C', 'F', 'Util']",,C,Rostered,
+9251,Bobby McMann,P,"['LW', 'F', 'Util']",,LW,Rostered,
+8287,Trevor Zegras,P,"['C', 'LW', 'RW', 'F', 'Util']",,LW,Rostered,
+9269,Juraj Slafkovský,P,"['LW', 'RW', 'F', 'Util']",,RW,Rostered,
+7264,Brandon Hagel,P,"['LW', 'RW', 'F', 'Util']",,RW,Rostered,
+7134,Tage Thompson,P,"['C', 'RW', 'F', 'Util']",,F,Rostered,
+7519,Cale Makar,P,"['D', 'Util']",,D,Rostered,
+9154,Arber Xhekaj,P,"['D', 'Util']",,D,Rostered,
+6795,Rasmus Andersson,P,"['D', 'Util']",,D,Rostered,
+6794,Jeremy Lauzon,P,"['D', 'Util']",,D,Rostered,
+6480,Viktor Arvidsson,P,"['LW', 'RW', 'F', 'Util']",,Util,Rostered,
+5376,J.T. Miller,P,"['C', 'LW', 'RW', 'F', 'Util']",,Util,Rostered,
+8293,Cole Caufield,P,"['LW', 'RW', 'F', 'Util']",,BN,Rostered,
+6038,Tyler Bertuzzi,P,"['LW', 'RW', 'F', 'Util']",,BN,Rostered,
+6374,William Nylander,P,"['C', 'RW', 'F', 'Util']",,BN,Rostered,
+7593,Stuart Skinner,G,['G'],,G,Rostered,
+8895,Jesper Wallstedt,G,['G'],,G,Rostered,
+5085,Philipp Grubauer,G,['G'],,BN,Rostered,
+30545,Leo Carlsson,P,"['C', 'F', 'Util', 'IR', 'IR+']",IR,IR,Rostered,
+5981,Aleksander Barkov,P,"['C', 'F', 'Util', 'IR', 'IR+']",IR-LT,IR,Rostered,
+3980,Jordan Staal,P,"['C', 'F', 'Util']",,,Free Agent,11.0
+3981,Jonathan Toews,P,"['C', 'F', 'Util']",,,Free Agent,2.0
+4008,Nick Foligno,P,"['C', 'LW', 'F', 'Util']",,,Free Agent,1.0
+4252,Lars Eller,P,"['C', 'F', 'Util']",,,Free Agent,0.0
+4263,Mikael Backlund,P,"['C', 'F', 'Util']",,,Free Agent,12.0
+4773,Casey Cizikas,P,"['C', 'LW', 'F', 'Util']",,,Free Agent,1.0
+4974,Jaden Schwartz,P,"['C', 'LW', 'F', 'Util', 'IR+']",DTD,,Free Agent,5.0
+4979,Nick Bjugstad,P,"['C', 'F', 'Util']",,,Free Agent,0.0
+4984,Kevin Hayes,P,"['C', 'F', 'Util']",,,Free Agent,0.0
+5024,Calle Jarnkrok,P,"['C', 'F', 'Util']",,,Free Agent,0.0
+5117,Sam Carrick,P,"['C', 'F', 'Util']",,,Free Agent,0.0
+5238,Adam Henrique,P,"['C', 'F', 'Util', 'IR', 'IR+']",IR-LT,,Free Agent,1.0
+5364,Jonathan Huberdeau,P,"['C', 'LW', 'F', 'Util', 'IR', 'IR+']",IR,,Free Agent,12.0
+5366,Ryan Strome,P,"['C', 'F', 'Util']",,,Free Agent,0.0
+5369,Sean Couturier,P,"['C', 'F', 'Util']",,,Free Agent,4.0
+5387,Phillip Danault,P,"['C', 'F', 'Util']",,,Free Agent,3.0
+5388,Vladislav Namestnikov,P,"['C', 'LW', 'F', 'Util']",,,Free Agent,1.0
+5405,Boone Jenner,P,"['C', 'LW', 'F', 'Util']",,,Free Agent,23.0
+5421,William Karlsson,P,"['C', 'F', 'Util', 'IR', 'IR+']",IR-LT,,Free Agent,4.0
+5434,Adam Lowry,P,"['C', 'F', 'Util']",,,Free Agent,1.0
+5462,Jean-Gabriel Pageau,P,"['C', 'RW', 'F', 'Util']",,,Free Agent,10.0
+5498,Sean Kuraly,P,"['C', 'F', 'Util']",,,Free Agent,0.0
+5559,Colin Blackwell,P,"['C', 'F', 'Util']",,,Free Agent,0.0
+5626,Alex Killorn,P,"['C', 'LW', 'RW', 'F', 'Util']",,,Free Agent,2.0
+5693,Radek Faksa,P,"['C', 'F', 'Util', 'IR+']",DTD,,Free Agent,0.0
+4008,Nick Foligno,P,"['C', 'LW', 'F', 'Util']",,,Free Agent,1.0
+4241,James van Riemsdyk,P,"['LW', 'F', 'Util']",,,Free Agent,3.0
+4265,David Perron,P,"['LW', 'RW', 'F', 'Util', 'IR', 'IR+']",IR,,Free Agent,2.0
+4704,Marcus Johansson,P,"['LW', 'F', 'Util']",,,Free Agent,12.0
+4773,Casey Cizikas,P,"['C', 'LW', 'F', 'Util']",,,Free Agent,1.0
+4779,Marcus Foligno,P,"['LW', 'F', 'Util', 'IR+']",DTD,,Free Agent,2.0
+4961,Taylor Hall,P,"['LW', 'F', 'Util']",,,Free Agent,3.0
+4965,Nino Niederreiter,P,"['LW', 'RW', 'F', 'Util']",,,Free Agent,2.0
+4974,Jaden Schwartz,P,"['C', 'LW', 'F', 'Util', 'IR+']",DTD,,Free Agent,5.0
+4976,Vladimir Tarasenko,P,"['LW', 'RW', 'F', 'Util']",,,Free Agent,12.0
+5032,Jason Zucker,P,"['LW', 'F', 'Util']",,,Free Agent,12.0
+5279,Gustav Nyquist,P,"['LW', 'RW', 'F', 'Util']",,,Free Agent,1.0
+5345,Nicolas Deslauriers,P,"['LW', 'F', 'Util']",,,Free Agent,0.0
+5364,Jonathan Huberdeau,P,"['C', 'LW', 'F', 'Util', 'IR', 'IR+']",IR,,Free Agent,12.0
+5382,Stefan Noesen,P,"['LW', 'RW', 'F', 'Util', 'IR', 'IR+']",IR-LT,,Free Agent,0.0
+5388,Vladislav Namestnikov,P,"['C', 'LW', 'F', 'Util']",,,Free Agent,1.0
+5405,Boone Jenner,P,"['C', 'LW', 'F', 'Util']",,,Free Agent,23.0
+5411,Brandon Saad,P,"['LW', 'F', 'Util', 'IR', 'IR+']",IR,,Free Agent,0.0
+5435,Nick Cousins,P,"['LW', 'F', 'Util']",,,Free Agent,0.0
+5573,Ondrej Palat,P,"['LW', 'F', 'Util']",,,Free Agent,1.0
+5626,Alex Killorn,P,"['C', 'LW', 'RW', 'F', 'Util']",,,Free Agent,2.0
+5694,Zemgus Girgensons,P,"['LW', 'RW', 'F', 'Util']",,,Free Agent,0.0
+5700,Scott Laughton,P,"['C', 'LW', 'F', 'Util']",,,Free Agent,3.0
+5710,Tanner Pearson,P,"['LW', 'F', 'Util']",,,Free Agent,0.0
+5739,Colton Sissons,P,"['C', 'LW', 'F', 'Util', 'IR+']",DTD,,Free Agent,0.0
+3365,Corey Perry,P,"['RW', 'F', 'Util']",,,Free Agent,7.0
+4186,Ryan Reaves,P,"['RW', 'F', 'Util']",,,Free Agent,0.0
+4265,David Perron,P,"['LW', 'RW', 'F', 'Util', 'IR', 'IR+']",IR,,Free Agent,2.0
+4498,Jordan Eberle,P,"['RW', 'F', 'Util']",,,Free Agent,27.0
+4706,Kyle Palmieri,P,"['RW', 'F', 'Util', 'IR', 'IR+']",IR,,Free Agent,4.0
+4753,Evgenii Dadonov,P,"['RW', 'F', 'Util']",,,Free Agent,0.0
+4965,Nino Niederreiter,P,"['LW', 'RW', 'F', 'Util']",,,Free Agent,2.0
+4976,Vladimir Tarasenko,P,"['LW', 'RW', 'F', 'Util']",,,Free Agent,12.0
+5120,Brendan Gallagher,P,"['RW', 'F', 'Util']",,,Free Agent,1.0
+5279,Gustav Nyquist,P,"['LW', 'RW', 'F', 'Util']",,,Free Agent,1.0
+5377,Joel Armia,P,"['RW', 'F', 'Util']",,,Free Agent,1.0
+5382,Stefan Noesen,P,"['LW', 'RW', 'F', 'Util', 'IR', 'IR+']",IR-LT,,Free Agent,0.0
+5462,Jean-Gabriel Pageau,P,"['C', 'RW', 'F', 'Util']",,,Free Agent,10.0
+5626,Alex Killorn,P,"['C', 'LW', 'RW', 'F', 'Util']",,,Free Agent,2.0
+5639,Reilly Smith,P,"['RW', 'F', 'Util']",,,Free Agent,1.0
+5694,Zemgus Girgensons,P,"['LW', 'RW', 'F', 'Util']",,,Free Agent,0.0
+5712,Jonathan Marchessault,P,"['RW', 'F', 'Util']",,,Free Agent,16.0
+5785,Josh Anderson,P,"['RW', 'F', 'Util']",,,Free Agent,1.0
+5840,Alexander Kerfoot,P,"['C', 'LW', 'RW', 'F', 'Util', 'IR', 'IR+']",IR,,Free Agent,0.0
+5846,Connor Brown,P,"['RW', 'F', 'Util']",,,Free Agent,0.0
+5982,Jonathan Drouin,P,"['LW', 'RW', 'F', 'Util']",,,Free Agent,2.0
+6002,Andre Burakovsky,P,"['LW', 'RW', 'F', 'Util']",,,Free Agent,4.0
+6009,Ryan Hartman,P,"['C', 'RW', 'F', 'Util']",,,Free Agent,18.0
+6055,Pavel Buchnevich,P,"['C', 'LW', 'RW', 'F', 'Util']",,,Free Agent,22.0
+6068,Oliver Bjorkstrand,P,"['RW', 'F', 'Util']",,,Free Agent,5.0
+3358,Brent Burns,P,"['D', 'Util']",,,Free Agent,59.0
+4251,Ryan McDonagh,P,"['D', 'Util']",,,Free Agent,3.0
+4257,Ian Cole,P,"['D', 'Util']",,,Free Agent,4.0
+4266,Brendan Smith,P,"['D', 'Util', 'IR', 'IR+']",IR,,Free Agent,0.0
+4472,Drew Doughty,P,"['D', 'Util']",,,Free Agent,34.0
+4473,Zach Bogosian,P,"['D', 'Util']",,,Free Agent,0.0
+4474,Alex Pietrangelo,P,"['D', 'Util', 'IR', 'IR+']",IR-LT,,Free Agent,1.0
+4475,Luke Schenn,P,"['D', 'Util']",,,Free Agent,2.0
+4485,Tyler Myers,P,"['D', 'Util']",,,Free Agent,1.0
+4491,Erik Karlsson,P,"['D', 'Util']",,,Free Agent,82.0
+4686,Oliver Ekman-Larsson,P,"['D', 'Util']",,,Free Agent,39.0
+4691,Ryan Ellis,P,"['D', 'Util', 'IR', 'IR+']",IR,,Free Agent,0.0
+4694,Dmitry Kulikov,P,"['D', 'Util', 'IR', 'IR+']",IR-LT,,Free Agent,0.0
+4696,Nick Leddy,P,"['D', 'Util']",,,Free Agent,0.0
+4771,Travis Hamonic,P,"['D', 'Util']",,,Free Agent,0.0
+4849,Jeff Petry,P,"['D', 'Util']",,,Free Agent,0.0
+4935,Chris Tanev,P,"['D', 'Util', 'IR', 'IR+']",IR-LT,,Free Agent,1.0
+4963,Erik Gudbranson,P,"['D', 'Util']",,,Free Agent,1.0
+4970,Dylan McIlrath,P,"['D', 'Util']",,,Free Agent,0.0
+4972,Cam Fowler,P,"['D', 'Util']",,,Free Agent,27.0
+4975,Derek Forbort,P,"['D', 'Util', 'IR', 'IR+']",IR-LT,,Free Agent,0.0
+5009,Alexander Petrovic,P,"['D', 'Util']",,,Free Agent,1.0
+5010,Justin Faulk,P,"['D', 'Util']",,,Free Agent,58.0
+5104,John Klingberg,P,"['D', 'Util']",,,Free Agent,9.0
+5227,Brayden McNabb,P,"['D', 'Util', 'IR', 'IR+']",IR,,Free Agent,10.0
