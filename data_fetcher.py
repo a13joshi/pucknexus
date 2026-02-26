@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 from datetime import datetime, timedelta, date
+from supabase_config import supabase  # Added for Phase 2
 
 # --- HELPER: PAGINATION ENGINE ---
 def _fetch_all(url, params, limit=100):
@@ -39,6 +40,34 @@ def _fetch_all(url, params, limit=100):
 
 # --- SKATERS ---
 def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
+    # --- PHASE 2: SUPABASE CACHE CHECK ---
+    # Only use cache for 'Full Season' (where start_date/end_date are None) to keep it simple
+    if start_date is None and end_date is None:
+        try:
+            # Check the timestamp of the last update
+            existing = supabase.table("skater_stats").select("updated_at").limit(1).execute()
+            
+            if existing.data:
+                last_update = datetime.fromisoformat(existing.data[0]['updated_at'].replace('Z', '+00:00'))
+                # If data is less than 24 hours old, return from DB
+                if datetime.now(last_update.tzinfo) - last_update < timedelta(hours=24):
+                    print("📦 PuckNexus Cache Hit: Loading from Supabase...")
+                    full_db = supabase.table("skater_stats").select("*").execute()
+                    db_df = pd.DataFrame(full_db.data)
+                    
+                    # Map SQL column names back to PuckNexus dataframe names
+                    return db_df.rename(columns={
+                        'player_id': 'playerId', 'player_name': 'Player', 
+                        'team_abbrev': 'Team', 'position_code': 'Pos',
+                        'gp': 'GP', 'goals': 'G', 'assists': 'A', 'points': 'PTS',
+                        'plus_minus': '+/-', 'pim': 'PIM', 'ppp': 'PPP', 
+                        'shots': 'SOG', 'hits': 'HIT', 'blocks': 'BLK'
+                    })
+        except Exception as e:
+            print(f"⚠️ Cache check failed or table empty: {e}")
+
+    # --- FALLBACK: ORIGINAL API FETCH LOGIC ---
+    print("🌐 Cache stale or custom timeframe: Fetching from NHL API...")
     summary_url = "https://api.nhle.com/stats/rest/en/skater/summary"
     realtime_url = "https://api.nhle.com/stats/rest/en/skater/realtime"
 
@@ -48,7 +77,6 @@ def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
     if end_date:
         cayenne_exp += f" and gameDate <= \"{end_date}\""
 
-    # Base Params
     params = {
         "isAggregate": "false", 
         "isGame": "false", 
@@ -57,11 +85,11 @@ def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
     }
 
     try:
-        # 1. Fetch ALL Summary Data (Looping)
+        # 1. Fetch ALL Summary Data
         df_s = _fetch_all(summary_url, params.copy())
         if df_s.empty: return pd.DataFrame()
 
-        # 2. Fetch ALL Realtime Data (Looping)
+        # 2. Fetch ALL Realtime Data
         rt_params = params.copy()
         if "sort" in rt_params: del rt_params["sort"]
         if start_date: rt_params["isAggregate"] = "true"
@@ -84,21 +112,39 @@ def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
         else:
             combined = df_s.copy()
 
-        # 4. Fill Missing & Clean Up
+        # 4. Cleanup & Format
         for c in ['HIT', 'BLK']: 
             if c not in combined.columns: combined[c] = 0
             combined[c] = pd.to_numeric(combined[c], errors='coerce').fillna(0).astype(int)
 
         rename_map = {
             'skaterFullName': 'Player', 'teamAbbrevs': 'Team', 'positionCode': 'Pos',
-            'gamesPlayed': 'GP', 'goals': 'G', 'assists': 'A', 'plusMinus': '+/-', 
-            'penaltyMinutes': 'PIM', 'ppPoints': 'PPP', 'shots': 'SOG'
+            'gamesPlayed': 'GP', 'goals': 'G', 'assists': 'A', 'points': 'PTS',
+            'plusMinus': '+/-', 'penaltyMinutes': 'PIM', 'ppPoints': 'PPP', 'shots': 'SOG'
         }
         
-        # 🟢 FIX: Explicitly add 'playerId' to the list so it doesn't get dropped
         final_cols = ['playerId'] + [c for c in rename_map.keys() if c in combined.columns] + ['HIT', 'BLK']
-        
         final_df = combined[final_cols].rename(columns=rename_map)
+
+# --- PHASE 2: UPDATE SUPABASE CACHE ---
+        if not final_df.empty and start_date is None:
+            # Prepare dictionary for SQL
+            upload_df = final_df.rename(columns={
+                'playerId': 'player_id', 'Player': 'player_name', 
+                'Team': 'team_abbrev', 'Pos': 'position_code',
+                'GP': 'gp', 'G': 'goals', 'A': 'assists', 'PTS': 'points',
+                '+/-': 'plus_minus', 'PIM': 'pim', 'PPP': 'ppp', 
+                'SOG': 'shots', 'HIT': 'hits', 'BLK': 'blocks'
+            })
+
+            # 🔥 FIX: Remove duplicate player IDs before sending to Supabase
+            upload_df = upload_df.drop_duplicates(subset=['player_id'])
+            
+            upload_data = upload_df.to_dict(orient='records')
+            
+            # Upsert into Supabase
+            supabase.table("skater_stats").upsert(upload_data).execute()
+            print("💾 Supabase Cache Updated.")
             
         return final_df
 
@@ -133,10 +179,7 @@ def get_nhl_goalie_stats(season="20252026", start_date=None, end_date=None):
             'savePct': 'SV%', 'shutouts': 'SHO'
         }
         
-        # 🟢 FIX: Keep 'playerId' here too for future-proofing
         available_cols = ['playerId'] + [c for c in rename_map.keys() if c in final_df.columns]
-        
-        # Use intersection to avoid KeyErrors if playerId is missing from API (rare)
         available_cols = [c for c in available_cols if c in final_df.columns]
         
         final_df = final_df[available_cols].rename(columns=rename_map)

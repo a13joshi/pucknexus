@@ -2,12 +2,45 @@ import yahoo_fantasy_api as yfa
 from yahoo_oauth import OAuth2
 import pandas as pd
 import json
+from supabase_config import supabase  # Added for Phase 2
 
 def connect_to_yahoo():
-    sc = OAuth2(None, None, from_file='oauth2.json')
-    if not sc.token_is_valid():
-        sc.refresh_access_token()
-    return sc
+    # 1. Fetch tokens from Supabase instead of local file
+    try:
+        response = supabase.table("auth_vault").select("*").eq("id", "yahoo_token").execute()
+        if not response.data:
+            print("❌ No tokens found in Supabase. Run migrate_auth.py first.")
+            return None
+        
+        db_data = response.data[0]
+        
+        # 2. Reconstruct the structure for the Yahoo OAuth library
+        # We pass the data directly into the OAuth2 object
+        sc = OAuth2(None, None, from_file=None)
+        sc.access_token = db_data['access_token']
+        sc.refresh_token = db_data['refresh_token']
+        sc.consumer_key = db_data['consumer_key']
+        sc.consumer_secret = db_data['consumer_secret']
+        sc.token_time = db_data['token_time']
+        
+        # 3. Check validity and refresh if needed
+        if not sc.token_is_valid():
+            print("🔄 Token expired. Refreshing...")
+            sc.refresh_access_token()
+            
+            # 4. Save the NEW tokens back to Supabase
+            updated_payload = {
+                "access_token": sc.access_token,
+                "refresh_token": sc.refresh_token,
+                "token_time": sc.token_time
+            }
+            supabase.table("auth_vault").update(updated_payload).eq("id", "yahoo_token").execute()
+            print("✅ Supabase tokens updated.")
+            
+        return sc
+    except Exception as e:
+        print(f"❌ Auth Error: {e}")
+        return None
 
 def get_league_and_team_keys(sc):
     try:
@@ -39,10 +72,11 @@ def get_league_and_team_keys(sc):
         return None, None, None
 
 def fetch_yahoo_data():
-    print("🔌 Connecting to Yahoo...")
+    print("🔌 Connecting to Yahoo via Supabase...")
     sc = connect_to_yahoo()
-    print("✅ Authentication Successful!")
+    if not sc: return
 
+    print("✅ Authentication Successful!")
     l_key, t_key, g_id = get_league_and_team_keys(sc)
     
     if not l_key:
@@ -59,30 +93,22 @@ def fetch_yahoo_data():
     df_roster = pd.DataFrame(roster)
     df_roster['Status'] = 'Rostered'
     
-    # 2. Get Free Agents (Top available)
+    # 2. Get Free Agents
     print("🦅 Scouting Waiver Wire...")
-    
-    # 🟢 FIX: Removed 'count' argument. We fetch default and slice the list in Python.
-    # The API returns the top available players by % Rostered/Rank.
     fa_c = lg.free_agents('C')[:25]
     fa_lw = lg.free_agents('LW')[:25]
     fa_rw = lg.free_agents('RW')[:25]
     fa_d = lg.free_agents('D')[:25]
     
     free_agents = fa_c + fa_lw + fa_rw + fa_d
-                  
     df_fa = pd.DataFrame(free_agents)
     df_fa['Status'] = 'Free Agent'
 
     # 3. Combine & Save
     print("💾 Saving data to 'yahoo_export.csv'...")
-    cols = ['name', 'position_type', 'eligible_positions', 'status', 'Status']
-    
     final_df = pd.concat([df_roster, df_fa], ignore_index=True)
-    
-    # Save to CSV
     final_df.to_csv("yahoo_export.csv", index=False)
-    print("✅ Done! You can now upload 'yahoo_export.csv' to PuckNexus.")
+    print("✅ Done! Data ready for PuckNexus.")
 
 if __name__ == "__main__":
     fetch_yahoo_data()
