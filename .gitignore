@@ -1,2 +1,7 @@
 venv/
 .env
+secrets.toml
+fix_env.py
+*.csv
+__pycache__/
+*.py[cod]
