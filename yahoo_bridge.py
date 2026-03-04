@@ -6,8 +6,8 @@ from yahoo_oauth import OAuth2
 import yahoo_fantasy_api as yfa
 from supabase_config import supabase
 
-def fetch_yahoo_data():
-    print("🦅 Wire Hawk: Initializing Global League Sync...")
+def _get_yahoo_oauth_session():
+    """Helper function to securely authenticate and return the OAuth session."""
     temp_oauth_file = 'temp_oauth.json'
 
     # 1. Retrieve tokens from Supabase Auth Vault
@@ -24,21 +24,32 @@ def fetch_yahoo_data():
     except Exception as e:
         raise Exception(f"Failed to load Auth Vault: {e}")
 
-    try:
-        # 2. Authenticate
-        sc = OAuth2(None, None, from_file=temp_oauth_file)
+    # 2. Authenticate
+    sc = OAuth2(None, None, from_file=temp_oauth_file)
+    
+    # --- Token Persistence ---
+    with open(temp_oauth_file, 'r') as f:
+        current_tokens = json.load(f)
+    
+    if current_tokens.get('access_token') != token_data.get('access_token'):
+        print("🔄 Token refreshed! Saving to Supabase Auth Vault IMMEDIATELY...")
+        current_tokens['id'] = 'yahoo_token'
+        supabase.table("auth_vault").upsert(current_tokens).execute()
+        print("✅ Supabase Auth Vault secured.")
         
-        # --- Token Persistence ---
-        with open(temp_oauth_file, 'r') as f:
-            current_tokens = json.load(f)
-        
-        if current_tokens.get('access_token') != token_data.get('access_token'):
-            print("🔄 Token refreshed! Saving to Supabase Auth Vault IMMEDIATELY...")
-            current_tokens['id'] = 'yahoo_token'
-            supabase.table("auth_vault").upsert(current_tokens).execute()
-            print("✅ Supabase Auth Vault secured.")
+    return sc, temp_oauth_file
 
-        # 3. Fetch Leagues dynamically using safe XML (Bypasses the 500 error)
+
+def get_user_leagues():
+    """
+    Step 1: Fetches NHL leagues associated with the Yahoo account.
+    Returns a dictionary: {"League Name": "league_key"}
+    """
+    sc = None
+    temp_oauth_file = None
+    try:
+        sc, temp_oauth_file = _get_yahoo_oauth_session()
+        
         print("🔍 Fetching your NHL leagues...")
         res = sc.session.get("https://fantasysports.yahooapis.com/fantasy/v2/users;use_login=1/games;game_keys=nhl/leagues")
         
@@ -48,32 +59,33 @@ def fetch_yahoo_data():
         root = ET.fromstring(res.text)
         ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
         
-        available_leagues = []
+        leagues_dict = {}
         for league in root.findall('.//ns:league', ns):
             l_key = league.find('ns:league_key', ns).text
             l_name = league.find('ns:name', ns).text
-            available_leagues.append({'key': l_key, 'name': l_name})
+            leagues_dict[l_name] = l_key
 
-        if not available_leagues:
+        if not leagues_dict:
             raise Exception("No active NHL leagues found for this account.")
-
-        # 4. Terminal UI: Let the user select
-        print("\n🏒 Available Leagues:")
-        for idx, l in enumerate(available_leagues):
-            print(f"[{idx + 1}] {l['name']} ({l['key']})")
             
-        choice = -1
-        while choice < 1 or choice > len(available_leagues):
-            try:
-                choice_str = input(f"\nSelect a league to sync (1-{len(available_leagues)}): ")
-                choice = int(choice_str)
-            except ValueError:
-                print("Please enter a valid number.")
-                
-        selected_league_key = available_leagues[choice - 1]['key']
-        selected_league_name = available_leagues[choice - 1]['name']
+        return leagues_dict
         
-        print(f"\n🏆 Connecting to: {selected_league_name}...")
+    finally:
+        # Always clean up the local token file
+        if temp_oauth_file and os.path.exists(temp_oauth_file):
+            os.remove(temp_oauth_file)
+
+
+def fetch_yahoo_data(selected_league_key):
+    """
+    Step 2: Fetches roster and free agent data for a specific league and exports to CSV.
+    """
+    sc = None
+    temp_oauth_file = None
+    try:
+        sc, temp_oauth_file = _get_yahoo_oauth_session()
+        
+        print(f"\n🏆 Connecting to league key: {selected_league_key}...")
         
         # Initialize the chosen league
         gm = yfa.Game(sc, 'nhl')
@@ -81,7 +93,7 @@ def fetch_yahoo_data():
 
         all_players = []
 
-        # 5. Loop through ALL Teams in the selected league
+        # Loop through ALL Teams in the selected league
         print("🔄 Fetching rosters for all teams...")
         teams = lg.teams()
         
@@ -105,7 +117,7 @@ def fetch_yahoo_data():
 
         print(f"✅ Found {len([p for p in all_players if p['Status'] == 'Rostered'])} rostered players.")
 
-        # 6. Fetch Top Free Agents
+        # Fetch Top Free Agents
         print("🔄 Fetching top Free Agents...")
         try:
             positions_to_check = ['C', 'LW', 'RW', 'D', 'G']
@@ -122,16 +134,13 @@ def fetch_yahoo_data():
         except Exception as e:
             print(f"⚠️ Issue fetching free agents: {e}")
 
-        # 7. Export to CSV for app.py
+        # Export to CSV for app.py
         df = pd.DataFrame(all_players)
         df = df.drop_duplicates(subset=['match_key'])
         df.to_csv("yahoo_export.csv", index=False)
         print("💾 Global League Sync complete. Saved to yahoo_export.csv.")
 
     finally:
-        # 8. Cleanup local file
-        if os.path.exists(temp_oauth_file):
+        # Always clean up the local token file
+        if temp_oauth_file and os.path.exists(temp_oauth_file):
             os.remove(temp_oauth_file)
-
-if __name__ == "__main__":
-    fetch_yahoo_data()
