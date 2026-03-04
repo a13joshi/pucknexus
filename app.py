@@ -184,7 +184,7 @@ with tab1:
                 "VORP": st.column_config.ProgressColumn("Scarcity (VORP)", format="%.2f", min_value=-3, max_value=5),
                 "Total Value": st.column_config.NumberColumn("Base Z-Score", format="%.2f"),
             },
-            hide_index=True, width="stretch"
+            hide_index=True, use_container_width=True
         )
     else:
         st.error("No skater data found in global calculation.")
@@ -228,7 +228,7 @@ with tab2:
         styler = styler.background_gradient(cmap="Greens", subset=['Score'])
         
         st.dataframe(
-            styler, height=800, width="stretch", # 🟢 Fixed Warning
+            styler, height=800, use_container_width=True, # 🟢 Fixed Warning
             column_config={
                 "Logo": st.column_config.ImageColumn("Team", width="small"),
                 "Score": st.column_config.ProgressColumn("Stream Score", min_value=0, max_value=14, format="%d")
@@ -369,7 +369,7 @@ with tab3:
                 st.dataframe(
                     bench_data[['Headshot', 'Player', 'Team', 'Plays Tonight', 'Opponent', sort_col]],
                     column_config={"Headshot": st.column_config.ImageColumn("Img", width="small")},
-                    hide_index=True, width="stretch"
+                    hide_index=True, use_container_width=True
                 )
             else:
                 st.warning("None of the selected players have a game scheduled for tonight!")
@@ -402,7 +402,7 @@ with tab4:
                 "Logo": st.column_config.ImageColumn("Team", width="small"),
                 "Total Z": st.column_config.ProgressColumn("Rank", min_value=-3, max_value=10, format="%.2f")
             },
-            height=600, width="stretch", hide_index=True 
+            height=600, use_container_width=True, hide_index=True 
         )
     else:
         st.warning("No goalie data found.")
@@ -440,14 +440,14 @@ with tab5:
                     st.dataframe(
                         trend.sort_values('Trend', ascending=False).head(20)[cols].style.format("{:.2f}", subset=['Trend', 'S_Val', 'R_Val']).background_gradient(cmap="Greens", subset=['Trend']),
                         column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")},
-                        hide_index=True, width="stretch"
+                        hide_index=True, use_container_width=True
                     )
                 with c2: 
                     st.subheader("❄️ Cooling Down")
                     st.dataframe(
                         trend.sort_values('Trend', ascending=True).head(20)[cols].style.format("{:.2f}", subset=['Trend', 'S_Val', 'R_Val']).background_gradient(cmap="Reds_r", subset=['Trend']),
                         column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")},
-                        hide_index=True, width="stretch"
+                        hide_index=True, use_container_width=True
                     )
 
 # =========================================
@@ -460,7 +460,7 @@ with tab6:
     col_sync, col_status = st.columns([1, 3])
     
     with col_sync:
-        if st.button("🔄 Sync with Yahoo", width="stretch"):
+        if st.button("🔄 Sync with Yahoo", use_container_width=True):
             with st.spinner("Syncing..."):
                 try:
                     fetch_yahoo_data()
@@ -546,11 +546,11 @@ with tab6:
             with c1:
                 st.subheader("💎 Free Agents")
                 # Add a green highlight to players with heavy remaining schedules
-                st.dataframe(fa[cols].style.background_gradient(cmap="Greens", subset=['Rem G', 'Off-Nights']), column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")}, hide_index=True, width="stretch", height=600)
+                st.dataframe(fa[cols].style.background_gradient(cmap="Greens", subset=['Rem G', 'Off-Nights']), column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")}, hide_index=True, use_container_width=True, height=600)
             with c2:
                 st.subheader("📋 My Roster")
                 ros_cols = ['Headshot', 'Logo', 'name', 'Team', 'Pos', 'Total Value'] + cats
-                st.dataframe(ros[ros_cols], column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")}, hide_index=True, width="stretch", height=600)
+                st.dataframe(ros[ros_cols], column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")}, hide_index=True, use_container_width=True, height=600)
         except Exception as e: 
             st.info(f"Run 'Sync with Yahoo' to load data. System message: {e}")
 
@@ -589,7 +589,7 @@ with tab7:
         fig1 = px.bar(team_power, x='Total Z', y='Fantasy_Team', orientation='h', 
                      color='Total Z', color_continuous_scale='viridis', text_auto='.2f')
         fig1.update_layout(height=400, showlegend=False)
-        st.plotly_chart(fig1, width="stretch")
+        st.plotly_chart(fig1, use_container_width=True)
         
         st.divider()
         
@@ -601,7 +601,7 @@ with tab7:
         
         # 'relative' barmode stacks positive values on the right, negatives on the left
         fig2.update_layout(height=600, barmode='relative', legend_title_text='Categories')
-        st.plotly_chart(fig2, width="stretch")
+        st.plotly_chart(fig2, use_container_width=True)
         
     except FileNotFoundError:
         st.warning("⚠️ yahoo_export.csv not found. Run 'Sync with Yahoo' in the Wire Hawk tab.")
@@ -624,7 +624,7 @@ with tab8:
             with col1: team_a = st.selectbox("Team A", teams, index=0)
             with col2: team_b = st.selectbox("Team B", teams, index=1)
 
-            if st.button("🔮 Simulate Week", width="stretch"):
+            if st.button("🔮 Simulate Week", use_container_width=True):
                 with st.spinner("Running Monte Carlo-style schedule projections..."):
                     # 1. Get current week schedule
                     today_date = date.today()
@@ -699,7 +699,7 @@ with tab8:
                     # Highlight the winning cell in green
                     st.dataframe(
                         comp_df.style.highlight_max(subset=[team_a, team_b], color='#2e7b50', axis=1).format({team_a: "{:.2f}", team_b: "{:.2f}"}), 
-                        width="stretch", 
+                        use_container_width=True, 
                         hide_index=True
                     )
         else:
@@ -762,7 +762,7 @@ with tab9:
                             "Logo": st.column_config.ImageColumn("Team", width="small"),
                             "Championship Score": st.column_config.ProgressColumn("Edge", min_value=0, max_value=20, format="%d")
                         },
-                        hide_index=True, width="stretch", height=600
+                        hide_index=True, use_container_width=True, height=600
                     )
                 
                 with col_advice:
