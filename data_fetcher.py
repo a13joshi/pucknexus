@@ -155,13 +155,33 @@ def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
 
 # --- GOALIES ---
 def get_nhl_goalie_stats(season="20252026", start_date=None, end_date=None):
+    # --- SUPABASE CACHE CHECK ---
+    if start_date is None and end_date is None:
+        try:
+            existing = supabase.table("goalie_stats").select("updated_at").limit(1).execute()
+            
+            if existing.data:
+                last_update = datetime.fromisoformat(existing.data[0]['updated_at'].replace('Z', '+00:00'))
+                if datetime.now(last_update.tzinfo) - last_update < timedelta(hours=24):
+                    print("📦 PuckNexus Cache Hit: Loading Goalies from Supabase...")
+                    full_db = supabase.table("goalie_stats").select("*").execute()
+                    db_df = pd.DataFrame(full_db.data)
+                    
+                    return db_df.rename(columns={
+                        'player_id': 'playerId', 'player_name': 'Player', 
+                        'team_abbrev': 'Team', 'gp': 'GP', 'w': 'W', 
+                        'gaa': 'GAA', 'sv_pct': 'SV%', 'sho': 'SHO'
+                    })
+        except Exception as e:
+            print(f"⚠️ Goalie cache check failed: {e}")
+
+    # --- FALLBACK: ORIGINAL API FETCH LOGIC ---
+    print("🌐 Fetching Goalies from NHL API...")
     url = "https://api.nhle.com/stats/rest/en/goalie/summary"
     
     cayenne_exp = f"seasonId={season} and gameTypeId=2"
-    if start_date:
-        cayenne_exp += f" and gameDate >= \"{start_date}\""
-    if end_date:
-        cayenne_exp += f" and gameDate <= \"{end_date}\""
+    if start_date: cayenne_exp += f" and gameDate >= \"{start_date}\""
+    if end_date: cayenne_exp += f" and gameDate <= \"{end_date}\""
 
     params = {
         "isAggregate": "false", "isGame": "false",
@@ -180,14 +200,33 @@ def get_nhl_goalie_stats(season="20252026", start_date=None, end_date=None):
         }
         
         available_cols = ['playerId'] + [c for c in rename_map.keys() if c in final_df.columns]
-        available_cols = [c for c in available_cols if c in final_df.columns]
-        
         final_df = final_df[available_cols].rename(columns=rename_map)
         
-        goalie_nums = ['GP', 'W', 'GAA', 'SV%', 'SHO']
-        for col in goalie_nums:
+        # Cast strictly to match Supabase SQL schema types
+        int_cols = ['GP', 'W', 'SHO']
+        for col in int_cols:
             if col in final_df.columns:
-                final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0).astype(float)
+                final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0).astype(int)
+                
+        float_cols = ['GAA', 'SV%']
+        for col in float_cols:
+            if col in final_df.columns:
+                final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0.0).astype(float)
+
+        # --- UPDATE SUPABASE CACHE ---
+        if not final_df.empty and start_date is None:
+            upload_df = final_df.rename(columns={
+                'playerId': 'player_id', 'Player': 'player_name', 
+                'Team': 'team_abbrev', 'GP': 'gp', 'W': 'w', 
+                'GAA': 'gaa', 'SV%': 'sv_pct', 'SHO': 'sho'
+            })
+            
+            # Remove duplicate player IDs before sending to DB
+            upload_df = upload_df.drop_duplicates(subset=['player_id'])
+            upload_data = upload_df.to_dict(orient='records')
+            
+            supabase.table("goalie_stats").upsert(upload_data).execute()
+            print("💾 Supabase Goalie Cache Updated.")
 
         return final_df
 

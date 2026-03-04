@@ -31,18 +31,17 @@ def calculate_z_scores(df, categories):
         if std == 0:
             df[f'{cat}V'] = 0.0
         else:
-            if invert:
-                # INVERTED (Lower is Better): (Mean - Player) / Std
-                # Example: League Avg 3.00 - Player 2.00 = +1.00 Z-Score
+            # STANDARD (Higher is Better): (Player - Mean) / Std
+            # We only invert if explicitly set to True (for GAA/SA)
+            if invert is True: 
                 df[f'{cat}V'] = (mean - df[col_name]) / std
             else:
-                # STANDARD (Higher is Better): (Player - Mean) / Std
                 df[f'{cat}V'] = (df[col_name] - mean) / std
         
         z_cols.append(f'{cat}V')
 
-    # 3. Sum Total Value
-    df['Value'] = df[z_cols].sum(axis=1)
+# 3. Sum Total Value (Renamed from 'Value' to 'Total Z' for PuckNexus 6.4)
+    df['Total Z'] = df[z_cols].sum(axis=1)
     
     # Return sorted
-    return df.sort_values(by='Value', ascending=False)
+    return df.sort_values(by='Total Z', ascending=False)
