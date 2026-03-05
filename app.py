@@ -29,7 +29,7 @@ def get_headshot(row):
     except: return ""
 
 # --- GLOBAL CONFIG ---
-st.set_page_config(page_title="PuckNexus 6.4", layout="wide")
+st.set_page_config(page_title="PuckNexus", layout="wide")
 
 st.markdown("""
 <style>
@@ -53,7 +53,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("PUCKNEXUS // 6.4")
+st.title("PUCKNEXUS")
 st.caption("THE UNOFFICIAL FANTASY HOCKEY EXPANSION")
 
 # --- GLOBAL CONTROL CENTER (Replaces Sidebar) ---
@@ -116,9 +116,9 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
             try:
                 auth_url = get_yahoo_auth_url()
                 
-                # Custom HTML to force the OAuth flow to stay in the current tab
+                # Use target="_top" to break out of the Streamlit iframe
                 st.markdown(f'''
-                    <a href="{auth_url}" target="_self" style="text-decoration: none;">
+                    <a href="{auth_url}" target="_top" style="text-decoration: none;">
                         <div style="background-color: #5c1699; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; text-align: center; font-weight: 600; border: 1px solid #7a1ec2; transition: 0.3s;">
                             🟣 Login with Yahoo
                         </div>
