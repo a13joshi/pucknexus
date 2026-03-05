@@ -87,8 +87,21 @@ def fetch_yahoo_data(selected_league_key):
         gm = yfa.Game(sc, 'nhl')
         lg = gm.to_league(selected_league_key)
         
-        # FIX 3: Get the exact Team Key for the authenticated user
-        my_team_key = lg.team_key()
+        # FIX 3: Safely get the Team Key by specifically filtering for NHL (Bypasses the library crash)
+        my_team_key = None
+        try:
+            res = sc.session.get("https://fantasysports.yahooapis.com/fantasy/v2/users;use_login=1/games;game_keys=nhl/teams")
+            if res.status_code == 200:
+                root = ET.fromstring(res.text)
+                ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
+                for team in root.findall('.//ns:team', ns):
+                    t_key = team.find('ns:team_key', ns).text
+                    if t_key and t_key.startswith(selected_league_key):
+                        my_team_key = t_key
+                        break
+        except Exception as e:
+            print(f"Warning: Could not isolate manager's team key: {e}")
+
         all_players = []
 
         # Fetch Rosters
