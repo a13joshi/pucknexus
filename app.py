@@ -479,8 +479,8 @@ with tab6:
             # STATE 1: Logged Out
             try:
                 st.link_button("🟣 Login with Yahoo", get_yahoo_auth_url(), use_container_width=True)
-            except KeyError:
-                st.error("Missing Yahoo Client ID/URI in st.secrets.")
+            except Exception as e:
+                st.error(f"Streamlit Vault Error: I cannot find the secret key named {e}")
         else:
             # STATE 2: Logged In
             leagues_dict = st.session_state.get('available_leagues', {})
