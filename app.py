@@ -56,27 +56,73 @@ st.markdown("""
 st.title("PUCKNEXUS // 6.4")
 st.caption("THE UNOFFICIAL FANTASY HOCKEY EXPANSION")
 
-# --- GLOBAL SIDEBAR & STRATEGY ENGINE ---
-# 1. We must define weights BEFORE the global calculation
-st.sidebar.markdown("### 📡 CONTROL CENTER")
-season_choice = st.sidebar.selectbox("Season", ["20252026", "20242025"])
-timeframe = st.sidebar.selectbox("📅 Timeframe", ["Full Season", "Last 14 Days", "Last 30 Days"])
-
-stats_start_date = None
-if timeframe == "Last 14 Days": stats_start_date = str(date.today() - timedelta(days=14))
-elif timeframe == "Last 30 Days": stats_start_date = str(date.today() - timedelta(days=30))
-
-st.sidebar.divider()
-st.sidebar.markdown("### 🧠 STRATEGY")
+# --- GLOBAL CONTROL CENTER (Replaces Sidebar) ---
 cats = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK']
-punt_cats = st.sidebar.multiselect("🗑️ Punt Categories", options=cats)
 
-weights = {}
-for cat in cats:
-    if cat in punt_cats: weights[cat] = 0.0
-    else:
-        is_active = st.sidebar.checkbox(f"{cat}", value=True, key=f"check_{cat}")
-        weights[cat] = 1.0 if is_active else 0.0
+# This expander acts as a dropdown menu at the top of the page
+with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
+    col_cfg, col_strat, col_yahoo = st.columns([1, 1.5, 1.5])
+
+    with col_cfg:
+        st.markdown("### ⚙️ Engine Settings")
+        season_choice = st.selectbox("Season", ["20252026", "20242025"])
+        timeframe = st.selectbox("📅 Timeframe", ["Full Season", "Last 14 Days", "Last 30 Days"])
+        
+        stats_start_date = None
+        if timeframe == "Last 14 Days": stats_start_date = str(date.today() - timedelta(days=14))
+        elif timeframe == "Last 30 Days": stats_start_date = str(date.today() - timedelta(days=30))
+
+    with col_strat:
+        st.markdown("### 🧠 Strategy Weights")
+        st.caption("Select categories to punt (sets value to 0).")
+        punt_cats = st.multiselect("🗑️ Punt Categories", options=cats, label_visibility="collapsed")
+        
+        # Streamlined weights logic: If it's punted, it's 0. Otherwise, it's 1.
+        weights = {cat: 0.0 if cat in punt_cats else 1.0 for cat in cats}
+
+    with col_yahoo:
+        st.markdown("### 🦅 Yahoo Live Sync")
+        from yahoo_bridge import get_yahoo_auth_url, exchange_code_for_token, get_user_leagues, fetch_yahoo_data
+        
+        # 1. Catch the OAuth Redirect Code from Yahoo
+        if "code" in st.query_params and 'yahoo_token_data' not in st.session_state:
+            auth_code = st.query_params["code"]
+            with st.spinner("Authenticating..."):
+                try:
+                    st.session_state['yahoo_token_data'] = exchange_code_for_token(auth_code)
+                    st.session_state['available_leagues'] = get_user_leagues()
+                    st.query_params.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Login failed: {e}")
+
+        # 2. Yahoo UI State Machine
+        if 'yahoo_token_data' not in st.session_state:
+            try:
+                st.link_button("🟣 Login with Yahoo", get_yahoo_auth_url(), use_container_width=True)
+                st.caption("Securely connect to pull live rosters and free agents.")
+            except KeyError:
+                st.error("Missing Yahoo Client ID/URI in st.secrets.")
+        else:
+            leagues_dict = st.session_state.get('available_leagues', {})
+            if leagues_dict:
+                selected_league_name = st.selectbox("Active League", options=list(leagues_dict.keys()), label_visibility="collapsed")
+                
+                c_sync, c_dis = st.columns(2)
+                with c_sync:
+                    if st.button(f"🔄 Sync Data", use_container_width=True):
+                        with st.spinner("Pulling fresh data..."):
+                            fetch_yahoo_data(leagues_dict[selected_league_name])
+                            st.success("Synced!")
+                            st.rerun()
+                with c_dis:
+                    if st.button("Disconnect", type="tertiary", use_container_width=True):
+                        del st.session_state['yahoo_token_data']
+                        st.rerun()
+            else:
+                st.warning("No hockey leagues found.")
+
+st.divider()
 
 # --- GLOBAL DATA CALCULATION ---
 calc_season = season_choice if 'season_choice' in locals() else "20252026"
@@ -451,64 +497,14 @@ with tab5:
                     )
 
 # =========================================
-# TAB 6: WIRE HAWK (OAuth Web Flow)
+# TAB 6: WIRE HAWK (Advanced Scout & FAs)
 # =========================================
 with tab6:
-    from yahoo_bridge import get_yahoo_auth_url, exchange_code_for_token, get_user_leagues, fetch_yahoo_data
+    st.subheader("🦅 THE WIRE HAWK")
+    st.caption("Cross-references your synced Yahoo league against the global PuckNexus calculation engine. Use the Control Center above to sync your league.")
     
-    st.subheader("🦅 LIVE WIRE SYNC")
-    
-    # 1. Catch the OAuth Redirect Code from Yahoo
-    if "code" in st.query_params and 'yahoo_token_data' not in st.session_state:
-        auth_code = st.query_params["code"]
-        with st.spinner("Authenticating with Yahoo..."):
-            try:
-                # Exchange the code for a token and fetch leagues
-                st.session_state['yahoo_token_data'] = exchange_code_for_token(auth_code)
-                st.session_state['available_leagues'] = get_user_leagues()
-                st.query_params.clear() # Clean up the URL
-                st.rerun()
-            except Exception as e:
-                st.error(f"Login failed: {e}")
-
-    # 2. UI Layout
-    col_ui, col_info = st.columns([1, 2])
-    
-    with col_ui:
-        if 'yahoo_token_data' not in st.session_state:
-            # STATE 1: Logged Out
-            try:
-                st.link_button("🟣 Login with Yahoo", get_yahoo_auth_url(), use_container_width=True)
-            except Exception as e:
-                st.error(f"Streamlit Vault Error: I cannot find the secret key named {e}")
-        else:
-            # STATE 2: Logged In
-            leagues_dict = st.session_state.get('available_leagues', {})
-            if leagues_dict:
-                selected_league_name = st.selectbox("Active League", options=list(leagues_dict.keys()))
-                
-                if st.button(f"🔄 Sync {selected_league_name}", use_container_width=True):
-                    with st.spinner("Pulling fresh data..."):
-                        fetch_yahoo_data(leagues_dict[selected_league_name])
-                        st.success("Sync Complete!")
-                        st.rerun()
-                        
-                if st.button("Disconnect", type="tertiary", use_container_width=True):
-                    del st.session_state['yahoo_token_data']
-                    st.rerun()
-            else:
-                st.warning("No hockey leagues found.")
-
-    with col_info:
-        if 'yahoo_token_data' in st.session_state:
-            st.success("✅ Securely connected to Yahoo Fantasy.")
-        else:
-            st.caption("Click login to securely authenticate via OAuth 2.0. We do not store your passwords.")
-
-    st.divider()
-
-    # 3. Data Processing & Display
     target_file = "yahoo_export.csv" 
+    
     if 'final' in locals() and not final.empty:
         try:
             y_data = pd.read_csv(target_file)
