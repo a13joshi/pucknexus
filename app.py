@@ -114,7 +114,17 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
         # 2. Yahoo UI State Machine
         if 'yahoo_token_data' not in st.session_state:
             try:
-                st.link_button("🟣 Login with Yahoo", get_yahoo_auth_url(), use_container_width=True)
+                auth_url = get_yahoo_auth_url()
+                
+                # Custom HTML to force the OAuth flow to stay in the current tab
+                st.markdown(f'''
+                    <a href="{auth_url}" target="_self" style="text-decoration: none;">
+                        <div style="background-color: #5c1699; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; text-align: center; font-weight: 600; border: 1px solid #7a1ec2; transition: 0.3s;">
+                            🟣 Login with Yahoo
+                        </div>
+                    </a>
+                ''', unsafe_allow_html=True)
+                
                 st.caption("Securely connect to pull live rosters and free agents.")
             except Exception as e:
                 st.error(f"Streamlit Vault Error: Missing {e} in secrets.")
