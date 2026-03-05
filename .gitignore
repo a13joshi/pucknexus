@@ -1,7 +1,11 @@
 venv/
-.env
 secrets.toml
 fix_env.py
 *.csv
-__pycache__/
 *.py[cod]
+.env
+__pycache__/
+venv_stable/
+yahoo_export.csv
+oauth2.json
+temp_oauth.json

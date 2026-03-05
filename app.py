@@ -451,26 +451,56 @@ with tab5:
                     )
 
 # =========================================
-# TAB 6: WIRE HAWK (With Off-Night Scout)
+# TAB 6: WIRE HAWK (With UI League Select)
 # =========================================
 with tab6:
-    from yahoo_bridge import fetch_yahoo_data
+    # Import the newly separated functions from your bridge
+    from yahoo_bridge import get_user_leagues, fetch_yahoo_data
     
     st.subheader("🦅 LIVE WIRE SYNC")
     col_sync, col_status = st.columns([1, 3])
     
     with col_sync:
-        if st.button("🔄 Sync with Yahoo", use_container_width=True):
-            with st.spinner("Syncing..."):
-                try:
-                    fetch_yahoo_data()
-                    st.success("Sync Complete!")
-                    st.rerun()
-                except Exception as e: 
-                    st.error(f"Sync failed: {e}")
-                    
+        # STEP 1: If leagues aren't loaded, show the Connect button
+        if 'yahoo_leagues_dict' not in st.session_state:
+            if st.button("🔗 1. Connect to Yahoo", use_container_width=True):
+                with st.spinner("Authenticating..."):
+                    try:
+                        # Fetch the dictionary of leagues
+                        leagues = get_user_leagues()
+                        if leagues:
+                            st.session_state['yahoo_leagues_dict'] = leagues
+                            st.rerun() # Refresh the page to show the dropdown
+                        else:
+                            st.error("No hockey leagues found on this account.")
+                    except Exception as e:
+                        st.error(f"Authentication failed: {e}")
+        
+        # STEP 2: If leagues are loaded, show the dropdown and Sync button
+        else:
+            leagues_dict = st.session_state['yahoo_leagues_dict']
+            selected_league_name = st.selectbox("Select League", options=list(leagues_dict.keys()))
+            
+            if st.button("🔄 2. Sync Selected League", use_container_width=True):
+                with st.spinner(f"Pulling data for {selected_league_name}..."):
+                    try:
+                        # Grab the ID for the selected league
+                        target_id = leagues_dict[selected_league_name]
+                        # Pass that ID into the fetch function to fix the TypeError!
+                        fetch_yahoo_data(target_id)
+                        
+                        st.success("Sync Complete!")
+                        st.rerun() # Refresh to load the new CSV
+                    except Exception as e:
+                        st.error(f"Sync failed: {e}")
+                        
+            # Button to reset and pick a different league
+            if st.button("Reset Connection", type="tertiary", use_container_width=True):
+                del st.session_state['yahoo_leagues_dict']
+                st.rerun()
+                
     with col_status:
-        st.caption("Pulls roster and top 100 free agents via Supabase.")
+        st.caption("Pulls roster and top 100 free agents via Supabase Auth.")
 
     st.divider()
 
