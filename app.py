@@ -63,7 +63,7 @@ cats = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK']
 with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
     col_cfg, col_strat, col_yahoo = st.columns([1, 1.5, 1.5])
 
-with col_cfg:
+    with col_cfg:
         st.markdown("### ⚙️ Engine Settings")
         # 1. Expand the season selection
         season_choice = st.selectbox("Season", ["20252026", "20242025", "20232024"])
