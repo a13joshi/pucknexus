@@ -451,72 +451,85 @@ with tab5:
                     )
 
 # =========================================
-# TAB 6: WIRE HAWK (With UI League Select)
+# TAB 6: WIRE HAWK (OAuth Web Flow)
 # =========================================
 with tab6:
-    # Import the newly separated functions from your bridge
-    from yahoo_bridge import get_user_leagues, fetch_yahoo_data
+    from yahoo_bridge import get_yahoo_auth_url, exchange_code_for_token, get_user_leagues, fetch_yahoo_data
     
     st.subheader("🦅 LIVE WIRE SYNC")
-    col_sync, col_status = st.columns([1, 3])
     
-    with col_sync:
-        # STEP 1: If leagues aren't loaded, show the Connect button
-        if 'yahoo_leagues_dict' not in st.session_state:
-            if st.button("🔗 1. Connect to Yahoo", use_container_width=True):
-                with st.spinner("Authenticating..."):
-                    try:
-                        # Fetch the dictionary of leagues
-                        leagues = get_user_leagues()
-                        if leagues:
-                            st.session_state['yahoo_leagues_dict'] = leagues
-                            st.rerun() # Refresh the page to show the dropdown
-                        else:
-                            st.error("No hockey leagues found on this account.")
-                    except Exception as e:
-                        st.error(f"Authentication failed: {e}")
-        
-        # STEP 2: If leagues are loaded, show the dropdown and Sync button
-        else:
-            leagues_dict = st.session_state['yahoo_leagues_dict']
-            selected_league_name = st.selectbox("Select League", options=list(leagues_dict.keys()))
-            
-            if st.button("🔄 2. Sync Selected League", use_container_width=True):
-                with st.spinner(f"Pulling data for {selected_league_name}..."):
-                    try:
-                        # Grab the ID for the selected league
-                        target_id = leagues_dict[selected_league_name]
-                        # Pass that ID into the fetch function to fix the TypeError!
-                        fetch_yahoo_data(target_id)
-                        
-                        st.success("Sync Complete!")
-                        st.rerun() # Refresh to load the new CSV
-                    except Exception as e:
-                        st.error(f"Sync failed: {e}")
-                        
-            # Button to reset and pick a different league
-            if st.button("Reset Connection", type="tertiary", use_container_width=True):
-                del st.session_state['yahoo_leagues_dict']
+    # 1. Catch the OAuth Redirect Code from Yahoo
+    if "code" in st.query_params and 'yahoo_token_data' not in st.session_state:
+        auth_code = st.query_params["code"]
+        with st.spinner("Authenticating with Yahoo..."):
+            try:
+                # Exchange the code for a token and fetch leagues
+                st.session_state['yahoo_token_data'] = exchange_code_for_token(auth_code)
+                st.session_state['available_leagues'] = get_user_leagues()
+                st.query_params.clear() # Clean up the URL
                 st.rerun()
+            except Exception as e:
+                st.error(f"Login failed: {e}")
+
+    # 2. UI Layout
+    col_ui, col_info = st.columns([1, 2])
+    
+    with col_ui:
+        if 'yahoo_token_data' not in st.session_state:
+            # STATE 1: Logged Out
+            try:
+                st.link_button("🟣 Login with Yahoo", get_yahoo_auth_url(), use_container_width=True)
+            except KeyError:
+                st.error("Missing Yahoo Client ID/URI in st.secrets.")
+        else:
+            # STATE 2: Logged In
+            leagues_dict = st.session_state.get('available_leagues', {})
+            if leagues_dict:
+                selected_league_name = st.selectbox("Active League", options=list(leagues_dict.keys()))
                 
-    with col_status:
-        st.caption("Pulls roster and top 100 free agents via Supabase Auth.")
+                if st.button(f"🔄 Sync {selected_league_name}", use_container_width=True):
+                    with st.spinner("Pulling fresh data..."):
+                        fetch_yahoo_data(leagues_dict[selected_league_name])
+                        st.success("Sync Complete!")
+                        st.rerun()
+                        
+                if st.button("Disconnect", type="tertiary", use_container_width=True):
+                    del st.session_state['yahoo_token_data']
+                    st.rerun()
+            else:
+                st.warning("No hockey leagues found.")
+
+    with col_info:
+        if 'yahoo_token_data' in st.session_state:
+            st.success("✅ Securely connected to Yahoo Fantasy.")
+        else:
+            st.caption("Click login to securely authenticate via OAuth 2.0. We do not store your passwords.")
 
     st.divider()
 
+    # 3. Data Processing & Display
     target_file = "yahoo_export.csv" 
     if 'final' in locals() and not final.empty:
         try:
             y_data = pd.read_csv(target_file)
             final['match_key'] = final['Player'].str.lower().str.strip()
             y_data['match_key'] = y_data['name'].str.lower().str.strip()
+            
             merged = pd.merge(y_data, final, left_on='match_key', right_on='match_key', how='inner')
+            # FIX 2: Obliterate duplicates post-merge (prevents double FAs)
+            merged = merged.drop_duplicates(subset=['match_key'])
             
             if 'Team' in merged.columns: merged['Logo'] = merged['Team'].apply(get_team_logo)
             if 'playerId' in merged.columns: merged['Headshot'] = merged.apply(get_headshot, axis=1)
 
             fa = merged[merged['Status'] == 'Free Agent'].sort_values('Total Value', ascending=False)
-            ros = merged[merged['Status'] == 'Rostered'].sort_values('Total Value', ascending=False)
+            
+            # FIX 3: Accurately isolate "My Roster" using the new Is_Mine flag
+            if 'Is_Mine' in merged.columns:
+                ros = merged[merged['Is_Mine'] == True].sort_values('Total Value', ascending=False)
+            else:
+                st.warning("Old export detected. Please run a fresh Sync to detect your specific team.")
+                ros = merged[merged['Status'] == 'Rostered'].sort_values('Total Value', ascending=False)
 
             # --- THE OFF-NIGHT SCHEDULE ENGINE ---
             today_date = date.today()
@@ -636,7 +649,7 @@ with tab7:
     except FileNotFoundError:
         st.warning("⚠️ yahoo_export.csv not found. Run 'Sync with Yahoo' in the Wire Hawk tab.")
 
-        # =========================================
+# =========================================
 # TAB 8: H2H MATCHUP SIMULATOR
 # =========================================
 with tab8:
