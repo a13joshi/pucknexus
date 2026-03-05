@@ -116,8 +116,8 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
             try:
                 st.link_button("🟣 Login with Yahoo", get_yahoo_auth_url(), use_container_width=True)
                 st.caption("Securely connect to pull live rosters and free agents.")
-            except KeyError:
-                st.error("Missing Yahoo Client ID/URI in st.secrets.")
+            except Exception as e:
+                st.error(f"Streamlit Vault Error: Missing {e} in secrets.")
         else:
             leagues_dict = st.session_state.get('available_leagues', {})
             if leagues_dict:
