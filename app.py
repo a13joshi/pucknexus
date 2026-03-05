@@ -63,14 +63,29 @@ cats = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK']
 with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
     col_cfg, col_strat, col_yahoo = st.columns([1, 1.5, 1.5])
 
-    with col_cfg:
+with col_cfg:
         st.markdown("### ⚙️ Engine Settings")
-        season_choice = st.selectbox("Season", ["20252026", "20242025"])
-        timeframe = st.selectbox("📅 Timeframe", ["Full Season", "Last 14 Days", "Last 30 Days"])
+        # 1. Expand the season selection
+        season_choice = st.selectbox("Season", ["20252026", "20242025", "20232024"])
+        
+        # 2. Add the Custom Date Range option
+        timeframe = st.selectbox("📅 Timeframe", ["Full Season", "Last 14 Days", "Last 30 Days", "Custom Date Range"])
         
         stats_start_date = None
-        if timeframe == "Last 14 Days": stats_start_date = str(date.today() - timedelta(days=14))
-        elif timeframe == "Last 30 Days": stats_start_date = str(date.today() - timedelta(days=30))
+        stats_end_date = None
+        
+        if timeframe == "Last 14 Days": 
+            stats_start_date = str(date.today() - timedelta(days=14))
+        elif timeframe == "Last 30 Days": 
+            stats_start_date = str(date.today() - timedelta(days=30))
+        elif timeframe == "Custom Date Range":
+            # Streamlit opens a calendar widget when a tuple is passed as the value
+            date_range = st.date_input("Select Date Range", value=(date.today() - timedelta(days=7), date.today()))
+            
+            # Ensure the user has actually selected both a start and end date on the calendar
+            if len(date_range) == 2:
+                stats_start_date = str(date_range[0])
+                stats_end_date = str(date_range[1])
 
     with col_strat:
         st.markdown("### 🧠 Strategy Weights")
@@ -225,12 +240,19 @@ with tab1:
                  .background_gradient(cmap="RdYlGn", subset=heatmap_cols),
             height=800, 
             column_config={
+                # 3. Lock these specific columns to the size of their content
                 "Headshot": st.column_config.ImageColumn("Img", width="small"),
                 "Logo": st.column_config.ImageColumn("Team", width="small"),
+                "Player": st.column_config.TextColumn("Player", width="medium"),
+                "Team": st.column_config.TextColumn("Team", width="small"),
+                "Pos": st.column_config.TextColumn("Pos", width="small"),
+                "GP": st.column_config.NumberColumn("GP", width="small"),
+                
                 "VORP": st.column_config.ProgressColumn("Scarcity (VORP)", format="%.2f", min_value=-3, max_value=5),
                 "Total Value": st.column_config.NumberColumn("Base Z-Score", format="%.2f"),
             },
-            hide_index=True, use_container_width=True
+            hide_index=True, 
+            use_container_width=True 
         )
     else:
         st.error("No skater data found in global calculation.")
