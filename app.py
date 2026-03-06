@@ -647,7 +647,8 @@ with tab6:
                 }, 
                 hide_index=True, 
                 use_container_width=True
-            )except Exception as e: 
+            )
+        except Exception as e: 
             st.info(f"Run 'Sync with Yahoo' to load data. System message: {e}")
 
 # =========================================
