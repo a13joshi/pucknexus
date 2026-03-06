@@ -3,6 +3,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta, date
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+
 from data_fetcher import get_nhl_skater_stats, get_nhl_goalie_stats, get_nhl_schedule, get_fantasy_weeks
 from monster_math import calculate_z_scores
 
