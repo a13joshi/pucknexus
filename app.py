@@ -8,12 +8,12 @@ from monster_math import calculate_z_scores
 
 # --- HELPER FUNCTIONS ---
 @st.cache_data
-def load_skaters(season, start_date):
-    return get_nhl_skater_stats(season, start_date)
+def load_skaters(season, start_date, end_date=None):
+    return get_nhl_skater_stats(season, start_date, end_date)
 
 @st.cache_data
-def load_goalies(season, start_date):
-    return get_nhl_goalie_stats(season, start_date)
+def load_goalies(season, start_date, end_date=None):
+    return get_nhl_goalie_stats(season, start_date, end_date)
 
 def get_team_logo(team_abbr):
     if not team_abbr or pd.isna(team_abbr): return ""
@@ -146,12 +146,14 @@ st.divider()
 # --- GLOBAL DATA CALCULATION ---
 calc_season = season_choice if 'season_choice' in locals() else "20252026"
 calc_start_date = stats_start_date if stats_start_date else "2025-10-01"
+# Add this line to handle the end date default:
+calc_end_date = stats_end_date if stats_end_date else str(date.today())
 
-# Load skater data
-s_df_global = load_skaters(calc_season, calc_start_date)
+# Pass the end date into the data loaders
+s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
 
 # Global Goalie Calculation
-g_df_global = load_goalies(calc_season, calc_start_date)
+g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
 if not g_df_global.empty:
     # Use standard goalie categories
     evaluated_goalies = calculate_z_scores(g_df_global, {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
