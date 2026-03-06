@@ -303,50 +303,6 @@ with tab2:
         st.warning(f"Could not load schedule: {e}")
 
 # =========================================
-# TAB 2: SCHEDULE
-# =========================================
-with tab2:
-    st.header("📅 Weekly Schedule & Off-Nights")
-    st.caption("Maximize your games played by targeting teams playing on light nights (Off-Nights: Mon, Wed, Fri, Sun).")
-    
-    try:
-        today_date = date.today()
-        weeks = get_fantasy_weeks()
-        current_week = next((w for w in weeks if w['start'] <= today_date <= w['end']), weeks[0])
-        
-        start_str = str(current_week['start'])
-        end_str = str(current_week['end'])
-        
-        st.markdown(f"**Current Fantasy Week:** `{start_str}` to `{end_str}`")
-        
-        week_sched = get_nhl_schedule(start_str)
-        if week_sched:
-            sched_data = []
-            for d, games in week_sched.items():
-                if start_str <= d <= end_str:
-                    dt = datetime.strptime(d, "%Y-%m-%d")
-                    is_off_night = dt.weekday() in [0, 2, 4, 6] 
-                    for team, opp in games.items():
-                        sched_data.append({'Team': team, 'Date': d, 'Off-Night': is_off_night})
-            
-            if sched_data:
-                sdf = pd.DataFrame(sched_data)
-                team_summary = sdf.groupby('Team').agg(
-                    Total_Games=('Date', 'count'),
-                    Off_Nights=('Off-Night', 'sum')
-                ).reset_index().sort_values(by=['Off_Nights', 'Total_Games'], ascending=[False, False])
-                
-                team_summary['Logo'] = team_summary['Team'].apply(get_team_logo)
-                
-                st.dataframe(
-                    team_summary[['Logo', 'Team', 'Total_Games', 'Off_Nights']].style.background_gradient(cmap="Purples", subset=['Off_Nights']),
-                    column_config={"Logo": st.column_config.ImageColumn("Team", width="small")},
-                    hide_index=True, use_container_width=True
-                )
-    except Exception as e:
-        st.warning(f"Could not load schedule: {e}")
-
-# =========================================
 # TAB 3: WAR ROOM (Blockbuster Edition)
 # =========================================
 with tab3:
@@ -715,58 +671,6 @@ with tab7:
         
     except FileNotFoundError:
         st.warning("⚠️ yahoo_export.csv not found. Run 'Sync with Yahoo' in the Control Center.")
-
-# =========================================
-# TAB 7: LEAGUE POWER RANKINGS
-# =========================================
-with tab7:
-    st.header("🏆 League Power Rankings")
-    try:
-        yahoo_df = pd.read_csv("yahoo_export.csv")
-        
-        # 1. Define Category Columns to Pull (based on your active sidebar weights)
-        active_cats = [c for c in cats if weights[c] > 0]
-        s_cat_cols = [f"{c}V" for c in active_cats]
-        g_cat_cols = ['WV', 'GAAV', 'SV%V', 'SHOV']
-        
-        # Safely only grab columns that actually generated
-        s_cols = ['match_key', 'Total Z'] + [c for c in s_cat_cols if c in evaluated_df.columns]
-        g_cols = ['match_key', 'Total Z'] + [c for c in g_cat_cols if c in evaluated_goalies.columns]
-        
-        # 2. Merge Skaters & Goalies with Yahoo Data
-        skater_league = pd.merge(yahoo_df, evaluated_df[s_cols], on='match_key', how='inner')
-        goalie_league = pd.merge(yahoo_df, evaluated_goalies[g_cols], on='match_key', how='inner')
-        
-        # 3. Combine & Clean (Fill missing cats with 0, e.g., skaters have 0 GAA)
-        full_league_df = pd.concat([skater_league, goalie_league]).fillna(0)
-        rostered_df = full_league_df[full_league_df['Status'] == 'Rostered']
-        
-        # 4. Group by Team and Sum everything
-        all_cat_cols = [c for c in s_cat_cols + g_cat_cols if c in rostered_df.columns]
-        team_power = rostered_df.groupby(['Fantasy_Team', 'Manager'])[['Total Z'] + all_cat_cols].sum().reset_index()
-        team_power = team_power.sort_values(by='Total Z', ascending=True) 
-        
-        # 5. Visualization 1: Overall True Power
-        st.subheader("⚡ True Team Power (Skaters + Goalies)")
-        fig1 = px.bar(team_power, x='Total Z', y='Fantasy_Team', orientation='h', 
-                     color='Total Z', color_continuous_scale='viridis', text_auto='.2f')
-        fig1.update_layout(height=400, showlegend=False)
-        st.plotly_chart(fig1, use_container_width=True)
-        
-        st.divider()
-        
-        # 6. Visualization 2: Category Dominance (The New Chart)
-        st.subheader("🧬 Category Dominance Breakdown")
-        st.caption("Hover over the segments to see exactly where teams are gaining or losing value.")
-        fig2 = px.bar(team_power, x=all_cat_cols, y='Fantasy_Team', orientation='h',
-                     labels={'value': 'Total Z-Score', 'variable': 'Category'})
-        
-        # 'relative' barmode stacks positive values on the right, negatives on the left
-        fig2.update_layout(height=600, barmode='relative', legend_title_text='Categories')
-        st.plotly_chart(fig2, use_container_width=True)
-        
-    except FileNotFoundError:
-        st.warning("⚠️ yahoo_export.csv not found. Run 'Sync with Yahoo' in the Wire Hawk tab.")
 
 # =========================================
 # TAB 8: H2H MATCHUP SIMULATOR (Live Data Edition)
