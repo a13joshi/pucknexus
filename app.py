@@ -158,8 +158,10 @@ s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
 # Global Goalie Calculation
 g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
 if not g_df_global.empty:
-    # Use standard goalie categories
     evaluated_goalies = calculate_z_scores(g_df_global, {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
+    if 'Total Z' in evaluated_goalies.columns:
+        # Rebrand at the root level
+        evaluated_goalies = evaluated_goalies.rename(columns={'Total Z': 'NexusScore'})
     evaluated_goalies['match_key'] = evaluated_goalies['Player'].str.lower().str.strip()
 else:
     evaluated_goalies = pd.DataFrame()
@@ -167,8 +169,9 @@ else:
 # Initialize evaluated_df globally
 if not s_df_global.empty:
     evaluated_df = calculate_z_scores(s_df_global, weights)
-    # Ensure 'Total Z' exists before proceeding
     if 'Total Z' in evaluated_df.columns:
+        # Rebrand at the root level
+        evaluated_df = evaluated_df.rename(columns={'Total Z': 'NexusScore'})
         evaluated_df['match_key'] = evaluated_df['Player'].str.lower().str.strip()
     else:
         st.error("Error: 'Total Z' column not generated. Check monster_math.py.")
@@ -192,60 +195,43 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 # TAB 1: DASHBOARD (Positional Scarcity Edition)
 # =========================================
 with tab1:
-    # Use the global calculation result
     final = evaluated_df.copy()
     
     if not final.empty:
-        # Safely rename Total Z
-        if 'Total Z' in final.columns:
-            final = final.rename(columns={'Total Z': 'Total Value'})
-        else:
-            st.error("Column 'Total Z' not found. Please verify monster_math.py.")
-            st.stop()
-
         # --- NEW: VORP / POSITIONAL SCARCITY ENGINE ---
-        # 1. Calculate the baseline (average of top 12) for each position
         baselines = {}
         for pos in ['C', 'L', 'R', 'D']:
-            # Find all players eligible for this position
-            pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('Total Value', ascending=False)
-            # The baseline is the average Z-score of a "starting" player at that position
-            baselines[pos] = pos_players.head(12)['Total Value'].mean() if len(pos_players) > 0 else 0
+            pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
+            baselines[pos] = pos_players.head(12)['NexusScore'].mean() if len(pos_players) > 0 else 0
         
-        # 2. Assign VORP to each player based on their primary position
         def calculate_vorp(row):
             if pd.isna(row['Pos']): return 0.0
             primary_pos = str(row['Pos']).replace('/', ',').split(',')[0].strip()
             if primary_pos in baselines:
-                return row['Total Value'] - baselines[primary_pos]
+                return row['NexusScore'] - baselines[primary_pos]
             return 0.0
 
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
-        # --- UI LAYOUT ---
         st.markdown("### 🎯 Player Value Dashboard")
-        st.caption("Players are sorted by their **Nexus Score** (overall mathematical value). The **VORP** column reveals their scarcity by comparing that score to the Top 12 average at their specific position.")
+        st.caption("Players are sorted by their **NexusScore** (overall mathematical value). The **VORP** column reveals their scarcity by comparing that score to the Top 12 average at their specific position.")
 
-        # Filter UI
         col_f, col_s = st.columns([3, 1])
         with col_f:
             selected_pos = st.multiselect("Filter Position", ['C', 'L', 'R', 'D'], default=['C', 'L', 'R', 'D'], key="dash_pos")
         
-        # Apply Filters and Sort by Nexus Score (Total Value) instead of VORP
         final = final[final['Pos'].isin(selected_pos)] if 'Pos' in final.columns else final
-        final = final.sort_values(by="Total Value", ascending=False)
+        final = final.sort_values(by="NexusScore", ascending=False)
         
-        # Image/Logo Logic
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # Dashboard Table Generation
-        cols_order = ['Headshot', 'Logo', 'Player', 'Team', 'Pos', 'GP', 'VORP', 'Total Value'] + cats
+        cols_order = ['Headshot', 'Logo', 'Player', 'Team', 'Pos', 'GP', 'VORP', 'NexusScore'] + cats
         actual_cols = [c for c in cols_order if c in final.columns]
-        heatmap_cols = ['VORP', 'Total Value'] + [c for c in cats if c in final.columns]
+        heatmap_cols = ['NexusScore'] + [c for c in cats if c in final.columns]
 
         st.dataframe(
-            final[actual_cols].style.format("{:.2f}", subset=['VORP', 'Total Value'])
+            final[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore'])
                  .background_gradient(cmap="RdYlGn", subset=heatmap_cols),
             height=800, 
             column_config={
@@ -255,69 +241,18 @@ with tab1:
                 "Team": st.column_config.TextColumn("Team", width="small"),
                 "Pos": st.column_config.TextColumn("Pos", width="small"),
                 "GP": st.column_config.NumberColumn("GP", width="small"),
-                
                 "VORP": st.column_config.ProgressColumn("Scarcity (VORP)", format="%.2f", min_value=-3, max_value=5),
-                "Total Value": st.column_config.NumberColumn("Nexus Score", format="%.2f"), # Rebranded here!
+                "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f"),
             },
             hide_index=True, 
             use_container_width=True 
         )
     else:
-        st.error("No skater data found in global calculation.")
-
-# =========================================
-# TAB 2: SMART SCHEDULE
-# =========================================
-with tab2:
-    sched_data = get_nhl_schedule(str(date.today()))
-    if sched_data:
-        all_teams = set(); dates = sorted(sched_data.keys()); matrix = {} 
-        off_night_dates = [d for d in dates if datetime.strptime(d, "%Y-%m-%d").weekday() in [0, 2, 4, 6]]
-
-        for d in dates:
-            for team, opp in sched_data[d].items():
-                all_teams.add(team); 
-                if team not in matrix: matrix[team] = {}
-                matrix[team][d] = opp
-
-        sched_df = pd.DataFrame.from_dict(matrix, orient='index')
-        sched_df = sched_df.reindex(index=list(all_teams), columns=dates).fillna("")
-        
-        sched_df['Total'] = sched_df.apply(lambda x: x[x != ""].count(), axis=1)
-        valid_off = [d for d in off_night_dates if d in sched_df.columns]
-        sched_df['Off-Nights'] = sched_df[valid_off].apply(lambda x: x[x != ""].count(), axis=1) if valid_off else 0
-        sched_df['Score'] = (sched_df['Off-Nights'] * 2) + (sched_df['Total'] - sched_df['Off-Nights'])
-        
-        sched_df = sched_df.sort_values(by=['Score', 'Total'], ascending=False)
-        sched_df['Logo'] = sched_df.index.to_series().apply(get_team_logo)
-        
-        cols = ['Logo', 'Score', 'Total', 'Off-Nights'] + dates
-        sched_df = sched_df[cols]
-
-        def highlight_off(val): return 'background-color: #2e7b50; color: white' if val != "" else 'background-color: #262730; color: #555'
-        def highlight_busy(val): return 'background-color: #8b6e28; color: white' if val != "" else 'background-color: #1e1e1e; color: #555'
-
-        styler = sched_df.style
-        if valid_off: styler = styler.map(highlight_off, subset=valid_off)
-        busy = [d for d in dates if d not in valid_off]
-        if busy: styler = styler.map(highlight_busy, subset=busy)
-        styler = styler.background_gradient(cmap="Greens", subset=['Score'])
-        
-        st.dataframe(
-            styler, height=800, use_container_width=True, # 🟢 Fixed Warning
-            column_config={
-                "Logo": st.column_config.ImageColumn("Team", width="small"),
-                "Score": st.column_config.ProgressColumn("Stream Score", min_value=0, max_value=14, format="%d")
-            }
-        )
-    else: st.warning("No schedule data.")
-
-# =========================================
+        st.error("No skater data found in global calculation.")# =========================================
 # TAB 3: WAR ROOM (Blockbuster Edition)
 # =========================================
 with tab3:
     st.header("⚖️ WAR ROOM: Blockbuster Trade Machine")
-    # Use the 'final' dataframe from Tab 1 (processed evaluated_df)
     if not final.empty:
         c1, c2 = st.columns(2)
         with c1: 
@@ -325,22 +260,19 @@ with tab3:
         with c2: 
             p2_list = st.multiselect("Team B Gives (Them)", final['Player'].unique(), key="t2_select")
 
-        # Only run the math if players are selected on both sides
         if p1_list and p2_list:
             p1_data = final[final['Player'].isin(p1_list)]
             p2_data = final[final['Player'].isin(p2_list)]
             
-            # Calculate Totals
-            p1_total = p1_data['Total Value'].sum()
-            p2_total = p2_data['Total Value'].sum()
+            p1_total = p1_data['NexusScore'].sum()
+            p2_total = p2_data['NexusScore'].sum()
             
-            # Display Side by Side
             col_p1, col_vs, col_p2 = st.columns([2, 1, 2])
             
             with col_p1:
                 st.markdown("<h3 style='text-align: center; color: #FF4B4B;'>Team A Package</h3>", unsafe_allow_html=True)
                 for _, row in p1_data.iterrows():
-                    st.markdown(f"**{row['Player']}** ({row['Pos']}): {row['Total Value']:.2f} Z")
+                    st.markdown(f"**{row['Player']}** ({row['Pos']}): {row['NexusScore']:.2f} Nexus")
                 st.metric("Total Package Value", f"{p1_total:.2f}")
 
             with col_vs: 
@@ -349,16 +281,14 @@ with tab3:
             with col_p2:
                 st.markdown("<h3 style='text-align: center; color: #00CC96;'>Team B Package</h3>", unsafe_allow_html=True)
                 for _, row in p2_data.iterrows():
-                    st.markdown(f"**{row['Player']}** ({row['Pos']}): {row['Total Value']:.2f} Z")
+                    st.markdown(f"**{row['Player']}** ({row['Pos']}): {row['NexusScore']:.2f} Nexus")
                 st.metric("Total Package Value", f"{p2_total:.2f}", delta=f"{(p2_total - p1_total):.2f}")
 
             st.divider()
 
-            # Uneven Trade Warning
             if len(p1_list) != len(p2_list):
-                st.warning(f"⚠️ **Uneven Trade Detected:** This is a {len(p1_list)}-for-{len(p2_list)} swap. The side receiving fewer players gains an empty roster spot, which holds the value of a top Free Agent (often ~1.5 to 2.0 Z-score on the wire).")
+                st.warning(f"⚠️ **Uneven Trade Detected:** This is a {len(p1_list)}-for-{len(p2_list)} swap. The side receiving fewer players gains an empty roster spot, which holds the value of a top Free Agent (often ~1.5 to 2.0 Nexus on the wire).")
             
-            # Trade Verdict Logic
             diff = p2_total - p1_total
             if diff > 1.0: verdict, v_color = "🔥 ACCEPT: Clear Upgrade", "#00CC96"
             elif diff < -1.0: verdict, v_color = "❌ DECLINE: Massive Value Loss", "#FF4B4B"
@@ -367,14 +297,13 @@ with tab3:
             st.markdown(f"""
                 <div style="background-color: #1c1f26; padding: 20px; border-radius: 10px; border-left: 5px solid {v_color};">
                     <h2 style="margin:0;">VERDICT: {verdict}</h2>
-                    <p style="margin-top:10px;">Net Value Change: <b>{diff:+.2f} Z</b></p>
+                    <p style="margin-top:10px;">Net Value Change: <b>{diff:+.2f} Nexus</b></p>
                 </div>
             """, unsafe_allow_html=True)
 
             st.divider()
             st.subheader("📅 Weekly Package Outlook")
             
-            # Schedule Logic for the whole package
             today_date = date.today()
             weeks = get_fantasy_weeks()
             current_week = next((w for w in weeks if w['start'] <= today_date <= w['end']), weeks[0])
@@ -391,25 +320,23 @@ with tab3:
                         if team_abbr in games: count += 1
                 return count
 
-            # Aggregate Games and Projected Impact across all players in the trade
             p1_games = sum(count_games(row['Team'], week_sched) for _, row in p1_data.iterrows())
             p2_games = sum(count_games(row['Team'], week_sched) for _, row in p2_data.iterrows())
             
-            p1_proj = sum(row['Total Value'] * count_games(row['Team'], week_sched) for _, row in p1_data.iterrows())
-            p2_proj = sum(row['Total Value'] * count_games(row['Team'], week_sched) for _, row in p2_data.iterrows())
+            p1_proj = sum(row['NexusScore'] * count_games(row['Team'], week_sched) for _, row in p1_data.iterrows())
+            p2_proj = sum(row['NexusScore'] * count_games(row['Team'], week_sched) for _, row in p2_data.iterrows())
 
             col_m1, col_m2 = st.columns(2)
             with col_m1:
-                st.metric(f"Team A ({p1_games} total games)", f"{p1_proj:.2f} Z")
+                st.metric(f"Team A ({p1_games} total games)", f"{p1_proj:.2f} Nexus")
             with col_m2:
-                st.metric(f"Team B ({p2_games} total games)", f"{p2_proj:.2f} Z", delta=f"{(p2_proj - p1_proj):.2f}")
+                st.metric(f"Team B ({p2_games} total games)", f"{p2_proj:.2f} Nexus", delta=f"{(p2_proj - p1_proj):.2f}")
                 
             st.caption(f"Projected for Fantasy Week: {start_str} to {end_str}")
 
         else:
             st.info("Select at least one player for both teams to analyze the blockbuster.")
 
-        # --- THE START / SIT OPTIMIZER ---
         st.divider()
         st.header("🚦 DAILY START / SIT OPTIMIZER")
         st.caption("Select players fighting for your final active roster spots tonight. We will check the NHL schedule and rank them by mathematical value.")
@@ -417,23 +344,17 @@ with tab3:
         bench_mob = st.multiselect("Select Players to Compare", final['Player'].unique(), key="bench_select")
         
         if bench_mob:
-            # 1. Get Today's Schedule
             today_str = str(date.today())
             daily_sched = get_nhl_schedule(today_str)
             todays_games = daily_sched.get(today_str, {}) if daily_sched else {}
             
-            # 2. Filter and evaluate players
             bench_data = final[final['Player'].isin(bench_mob)].copy()
-            
-            # Add opponent and game status
             bench_data['Plays Tonight'] = bench_data['Team'].apply(lambda t: "Yes" if t in todays_games else "No")
             bench_data['Opponent'] = bench_data['Team'].apply(lambda t: todays_games.get(t, "N/A"))
             
-            # 3. Sort logic: Must play tonight, then highest VORP/Total Value
-            sort_col = 'VORP' if 'VORP' in bench_data.columns else 'Total Value'
+            sort_col = 'VORP' if 'VORP' in bench_data.columns else 'NexusScore'
             bench_data = bench_data.sort_values(by=['Plays Tonight', sort_col], ascending=[False, False])
             
-            # 4. UI Display
             st.markdown("### 🎯 Optimizer Recommendation")
             
             active_players = bench_data[bench_data['Plays Tonight'] == 'Yes']
@@ -441,7 +362,6 @@ with tab3:
                 top_start = active_players.iloc[0]
                 st.success(f"**START:** {top_start['Player']} vs {top_start['Opponent']} (Value: {top_start[sort_col]:.2f})")
                 
-                # Show the data table
                 st.dataframe(
                     bench_data[['Headshot', 'Player', 'Team', 'Plays Tonight', 'Opponent', sort_col]],
                     column_config={"Headshot": st.column_config.ImageColumn("Img", width="small")},
@@ -457,26 +377,35 @@ with tab3:
 # TAB 4: GOALIES
 # =========================================
 with tab4:
-    g_df = load_goalies(calc_season, calc_start_date)
+    # Pass the end date here to make sure custom calendar ranges work for goalies too
+    g_df = load_goalies(calc_season, calc_start_date, calc_end_date)
     
     if not g_df.empty:
         r_g = calculate_z_scores(g_df, {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
         
         if 'Team' in r_g.columns: r_g['Logo'] = r_g['Team'].apply(get_team_logo)
         if 'playerId' in r_g.columns: r_g['Headshot'] = r_g.apply(get_headshot, axis=1)
+        
+        # Rebrand to NexusScore
+        if 'Total Z' in r_g.columns: 
+            r_g = r_g.rename(columns={'Total Z': 'NexusScore'})
             
-        cols = ['Headshot', 'Logo', 'Player', 'Team', 'Total Z', 'GP', 'W', 'GAA', 'SV%', 'SHO']
-        g_heatmap = ['Total Z', 'W', 'GAA', 'SV%', 'SHO']
+        # Safely check which columns actually exist before trying to display them
+        cols_order = ['Headshot', 'Logo', 'Player', 'Team', 'NexusScore', 'GP', 'W', 'GAA', 'SV%', 'SHO']
+        actual_cols = [c for c in cols_order if c in r_g.columns]
+        
+        g_heatmap = ['NexusScore', 'W', 'GAA', 'SV%', 'SHO']
+        actual_heatmap = [c for c in g_heatmap if c in r_g.columns]
         
         st.dataframe(
-            r_g[cols].style.format({
-                "Total Z": "{:.2f}", "W": "{:.0f}", "GAA": "{:.3f}", 
+            r_g[actual_cols].style.format({
+                "NexusScore": "{:.2f}", "W": "{:.0f}", "GAA": "{:.3f}", 
                 "SV%": "{:.3f}", "SHO": "{:.0f}", "GP": "{:.0f}"
-            }).background_gradient(cmap="RdYlGn", subset=g_heatmap),
+            }).background_gradient(cmap="RdYlGn", subset=actual_heatmap),
             column_config={
                 "Headshot": st.column_config.ImageColumn("Img", width="small"),
                 "Logo": st.column_config.ImageColumn("Team", width="small"),
-                "Total Z": st.column_config.ProgressColumn("Rank", min_value=-3, max_value=10, format="%.2f")
+                "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f")
             },
             height=600, use_container_width=True, hide_index=True 
         )
@@ -542,50 +471,43 @@ with tab6:
             y_data['match_key'] = y_data['name'].str.lower().str.strip()
             
             merged = pd.merge(y_data, final, left_on='match_key', right_on='match_key', how='inner')
-            # FIX 2: Obliterate duplicates post-merge (prevents double FAs)
             merged = merged.drop_duplicates(subset=['match_key'])
             
             if 'Team' in merged.columns: merged['Logo'] = merged['Team'].apply(get_team_logo)
             if 'playerId' in merged.columns: merged['Headshot'] = merged.apply(get_headshot, axis=1)
 
-            fa = merged[merged['Status'] == 'Free Agent'].sort_values('Total Value', ascending=False)
+            fa = merged[merged['Status'] == 'Free Agent'].sort_values('NexusScore', ascending=False)
             
-            # FIX 3: Accurately isolate "My Roster" using the new Is_Mine flag
             if 'Is_Mine' in merged.columns:
-                ros = merged[merged['Is_Mine'] == True].sort_values('Total Value', ascending=False)
+                ros = merged[merged['Is_Mine'] == True].sort_values('NexusScore', ascending=False)
             else:
                 st.warning("Old export detected. Please run a fresh Sync to detect your specific team.")
-                ros = merged[merged['Status'] == 'Rostered'].sort_values('Total Value', ascending=False)
+                ros = merged[merged['Status'] == 'Rostered'].sort_values('NexusScore', ascending=False)
 
-            # --- THE OFF-NIGHT SCHEDULE ENGINE ---
+            # Schedule logic
             today_date = date.today()
             today_str = str(today_date)
             weeks = get_fantasy_weeks()
             current_week = next((w for w in weeks if w['start'] <= today_date <= w['end']), weeks[0])
             end_str = str(current_week['end'])
             
-            # Fetch schedule using only the start date to prevent the TypeError
             rem_sched = get_nhl_schedule(today_str)
             team_rem_games = {}
             team_rem_off = {}
             
             if rem_sched:
                 for d, games in rem_sched.items():
-                    # Only calculate games remaining for the CURRENT fantasy week
                     if today_str <= d <= end_str:
                         dt = datetime.strptime(d, "%Y-%m-%d")
-                        is_off_night = dt.weekday() in [0, 2, 4, 6] # Mon, Wed, Fri, Sun
+                        is_off_night = dt.weekday() in [0, 2, 4, 6] 
                         for team, opp in games.items():
                             team_rem_games[team] = team_rem_games.get(team, 0) + 1
                             if is_off_night:
                                 team_rem_off[team] = team_rem_off.get(team, 0) + 1
 
-            # Map the schedule data to the Free Agents
             fa['Rem G'] = fa['Team'].map(team_rem_games).fillna(0).astype(int)
             fa['Off-Nights'] = fa['Team'].map(team_rem_off).fillna(0).astype(int)
             
-            cols = ['Headshot', 'Logo', 'name', 'Team', 'Pos', 'Rem G', 'Off-Nights', 'Total Value'] + cats
-
             # --- THE ADVANCED SCOUT ---
             if not ros.empty and not fa.empty:
                 active_cats = [c for c in cats if weights[c] > 0]
@@ -594,39 +516,34 @@ with tab6:
                     weakest_cat_v = team_analysis.idxmin()
                     weakest_cat = weakest_cat_v.replace('V', '')
                     
-                    # Filter to FAs who actually play again this week
                     playable_fa = fa[fa['Rem G'] > 0]
                     if not playable_fa.empty:
-                        # Find the best FA for the weak category
                         best_fa = playable_fa.sort_values(by=[weakest_cat_v, 'Off-Nights'], ascending=[False, False]).iloc[0]
                         
                         st.markdown(f"""
                             <div style="background-color: #1c1f26; padding: 15px; border-radius: 10px; border-left: 5px solid #FF914D; margin-bottom: 20px;">
                                 <h3 style="margin:0; color: #FF914D;">🦅 ADVANCED SCOUT'S RECOMMENDATION</h3>
-                                <p style="margin:10px 0 0 0;">Team Weakness: <b>{weakest_cat}</b> (Avg Z: {team_analysis[weakest_cat_v]:.2f}).<br>
-                                Top FA Target: <b>{best_fa['name']}</b> ({best_fa[weakest_cat_v]:.2f} Z-Score).<br>
+                                <p style="margin:10px 0 0 0;">Team Weakness: <b>{weakest_cat}</b> (Avg: {team_analysis[weakest_cat_v]:.2f}).<br>
+                                Top FA Target: <b>{best_fa['name']}</b> ({best_fa[weakest_cat_v]:.2f} Category Score).<br>
                                 <i style="color: #00CC96;">Schedule Edge: {best_fa['Rem G']} games remaining this week, including <b>{best_fa['Off-Nights']} off-nights</b>.</i></p>
                             </div>
                         """, unsafe_allow_html=True)
                     else:
                         st.info("No free agents have games remaining this week.")
             
-            # --- FINAL UI LAYOUT ---
             st.divider()
             
-            # Define the exact columns we want to apply the red/green heatmap to
-            heatmap_subset = ['Total Value'] + cats
+            heatmap_subset = ['NexusScore'] + cats
             
-            # 1. Full-Width Roster
             st.subheader("📋 My Roster")
-            ros_cols = ['Headshot', 'Logo', 'Name', 'Team', 'Pos', 'Total Value'] + cats
+            ros_cols = ['Headshot', 'Logo', 'name', 'Team', 'Pos', 'NexusScore'] + cats
             st.dataframe(
-                ros[ros_cols].style.format("{:.2f}", subset=['Total Value'])
+                ros[ros_cols].style.format("{:.2f}", subset=['NexusScore'])
                              .background_gradient(cmap="RdYlGn", subset=heatmap_subset), 
                 column_config={
                     "Logo": st.column_config.ImageColumn("Team", width="small"), 
                     "Headshot": st.column_config.ImageColumn("Img", width="small"),
-                    "Total Value": st.column_config.NumberColumn("Z-Score", format="%.2f")
+                    "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f")
                 }, 
                 hide_index=True, 
                 use_container_width=True
@@ -634,22 +551,65 @@ with tab6:
             
             st.divider()
             
-            # 2. Full-Width Free Agents
             st.subheader("💎 Free Agents")
-            fa_cols = ['Headshot', 'Logo', 'Name', 'Team', 'Pos', 'Rem G', 'Off-Nights', 'Total Value'] + cats
+            fa_cols = ['Headshot', 'Logo', 'name', 'Team', 'Pos', 'Rem G', 'Off-Nights', 'NexusScore'] + cats
             st.dataframe(
-                fa[fa_cols].style.format("{:.2f}", subset=['Total Value'])
+                fa[fa_cols].style.format("{:.2f}", subset=['NexusScore'])
                            .background_gradient(cmap="RdYlGn", subset=heatmap_subset), 
                 column_config={
                     "Logo": st.column_config.ImageColumn("Team", width="small"), 
                     "Headshot": st.column_config.ImageColumn("Img", width="small"),
-                    "Total Value": st.column_config.NumberColumn("Z-Score", format="%.2f")
+                    "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f")
                 }, 
                 hide_index=True, 
                 use_container_width=True
             )
         except Exception as e: 
             st.info(f"Run 'Sync with Yahoo' to load data. System message: {e}")
+
+# =========================================
+# TAB 7: LEAGUE POWER RANKINGS
+# =========================================
+with tab7:
+    st.header("🏆 League Power Rankings")
+    try:
+        yahoo_df = pd.read_csv("yahoo_export.csv")
+        
+        active_cats = [c for c in cats if weights[c] > 0]
+        s_cat_cols = [f"{c}V" for c in active_cats]
+        g_cat_cols = ['WV', 'GAAV', 'SV%V', 'SHOV']
+        
+        s_cols = ['match_key', 'NexusScore'] + [c for c in s_cat_cols if c in evaluated_df.columns]
+        g_cols = ['match_key', 'NexusScore'] + [c for c in g_cat_cols if c in evaluated_goalies.columns]
+        
+        skater_league = pd.merge(yahoo_df, evaluated_df[s_cols], on='match_key', how='inner')
+        goalie_league = pd.merge(yahoo_df, evaluated_goalies[g_cols], on='match_key', how='inner')
+        
+        full_league_df = pd.concat([skater_league, goalie_league]).fillna(0)
+        rostered_df = full_league_df[full_league_df['Status'] == 'Rostered']
+        
+        all_cat_cols = [c for c in s_cat_cols + g_cat_cols if c in rostered_df.columns]
+        team_power = rostered_df.groupby(['Fantasy_Team', 'Manager'])[['NexusScore'] + all_cat_cols].sum().reset_index()
+        team_power = team_power.sort_values(by='NexusScore', ascending=True) 
+        
+        st.subheader("⚡ True Team Power (Skaters + Goalies)")
+        fig1 = px.bar(team_power, x='NexusScore', y='Fantasy_Team', orientation='h', 
+                     color='NexusScore', color_continuous_scale='viridis', text_auto='.2f')
+        fig1.update_layout(height=400, showlegend=False)
+        st.plotly_chart(fig1, use_container_width=True)
+        
+        st.divider()
+        
+        st.subheader("🧬 Category Dominance Breakdown")
+        st.caption("Hover over the segments to see exactly where teams are gaining or losing value.")
+        fig2 = px.bar(team_power, x=all_cat_cols, y='Fantasy_Team', orientation='h',
+                     labels={'value': 'Total NexusScore', 'variable': 'Category'})
+        
+        fig2.update_layout(height=600, barmode='relative', legend_title_text='Categories')
+        st.plotly_chart(fig2, use_container_width=True)
+        
+    except FileNotFoundError:
+        st.warning("⚠️ yahoo_export.csv not found. Run 'Sync with Yahoo' in the Control Center.")
 
 # =========================================
 # TAB 7: LEAGUE POWER RANKINGS
