@@ -149,30 +149,35 @@ st.divider()
 # --- GLOBAL DATA CALCULATION ---
 calc_season = season_choice if 'season_choice' in locals() else "20252026"
 calc_start_date = stats_start_date if stats_start_date else "2025-10-01"
-# Add this line to handle the end date default:
 calc_end_date = stats_end_date if stats_end_date else str(date.today())
 
-# Pass the end date into the data loaders
 s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
-
-# Global Goalie Calculation
 g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
+
+# --- FIX: THE FANTASY BASELINE ---
+# Filter out 4th liners to establish a realistic mathematical average
+min_gp = 5 if timeframe == "Full Season" else 1
+
 if not g_df_global.empty:
-    evaluated_goalies = calculate_z_scores(g_df_global, {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
+    g_df_math_pool = g_df_global[g_df_global['GP'] >= (min_gp - 2)] # Goalies play less
+    evaluated_goalies = calculate_z_scores(g_df_math_pool, {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
     if 'Total Z' in evaluated_goalies.columns:
-        # Rebrand at the root level
         evaluated_goalies = evaluated_goalies.rename(columns={'Total Z': 'NexusScore'})
     evaluated_goalies['match_key'] = evaluated_goalies['Player'].str.lower().str.strip()
 else:
     evaluated_goalies = pd.DataFrame()
 
-# Initialize evaluated_df globally
 if not s_df_global.empty:
-    evaluated_df = calculate_z_scores(s_df_global, weights)
+    s_df_math_pool = s_df_global[s_df_global['GP'] >= min_gp]
+    evaluated_df = calculate_z_scores(s_df_math_pool, weights)
+    
     if 'Total Z' in evaluated_df.columns:
-        # Rebrand at the root level
         evaluated_df = evaluated_df.rename(columns={'Total Z': 'NexusScore'})
         evaluated_df['match_key'] = evaluated_df['Player'].str.lower().str.strip()
+        
+        # FIX: Ensure playerId survives the math engine so images can render
+        if 'playerId' not in evaluated_df.columns and 'playerId' in s_df_global.columns:
+            evaluated_df = pd.merge(evaluated_df, s_df_global[['Player', 'playerId']].drop_duplicates(), on='Player', how='left')
     else:
         st.error("Error: 'Total Z' column not generated. Check monster_math.py.")
         st.stop()
@@ -198,7 +203,6 @@ with tab1:
     final = evaluated_df.copy()
     
     if not final.empty:
-        # --- NEW: VORP / POSITIONAL SCARCITY ENGINE ---
         baselines = {}
         for pos in ['C', 'L', 'R', 'D']:
             pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
@@ -214,7 +218,7 @@ with tab1:
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
         st.markdown("### 🎯 Player Value Dashboard")
-        st.caption("Players are sorted by their **NexusScore** (overall mathematical value). The **VORP** column reveals their scarcity by comparing that score to the Top 12 average at their specific position.")
+        st.caption("Players are sorted by their **NexusScore** (overall mathematical value). The **Scarcity** column reveals their true positional value.")
 
         col_f, col_s = st.columns([3, 1])
         with col_f:
@@ -223,11 +227,15 @@ with tab1:
         final = final[final['Pos'].isin(selected_pos)] if 'Pos' in final.columns else final
         final = final.sort_values(by="NexusScore", ascending=False)
         
+        # Safe Image Generation
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        cols_order = ['Headshot', 'Logo', 'Player', 'Team', 'Pos', 'GP', 'VORP', 'NexusScore'] + cats
+        # EXACT REQUESTED ORDER
+        cols_order = ['Headshot', 'Logo', 'Team', 'Player', 'Pos', 'NexusScore', 'VORP', 'GP'] + cats
         actual_cols = [c for c in cols_order if c in final.columns]
+        
+        # Removed VORP from heatmap to reduce red overload
         heatmap_cols = ['NexusScore'] + [c for c in cats if c in final.columns]
 
         st.dataframe(
@@ -235,20 +243,67 @@ with tab1:
                  .background_gradient(cmap="RdYlGn", subset=heatmap_cols),
             height=800, 
             column_config={
-                "Headshot": st.column_config.ImageColumn("Img", width="small"),
-                "Logo": st.column_config.ImageColumn("Team", width="small"),
-                "Player": st.column_config.TextColumn("Player", width="medium"),
+                # Labels set to "" to prevent Streamlit duplication glitches
+                "Headshot": st.column_config.ImageColumn("", width="small"),
+                "Logo": st.column_config.ImageColumn("", width="small"),
                 "Team": st.column_config.TextColumn("Team", width="small"),
+                "Player": st.column_config.TextColumn("Player", width="medium"),
                 "Pos": st.column_config.TextColumn("Pos", width="small"),
-                "GP": st.column_config.NumberColumn("GP", width="small"),
-                "VORP": st.column_config.ProgressColumn("Scarcity (VORP)", format="%.2f", min_value=-3, max_value=5),
-                "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f"),
+                "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
+                "VORP": st.column_config.NumberColumn("Scarcity", format="%.2f", width="small"), # Red bar removed
+                "GP": st.column_config.NumberColumn("GP", width="small")
             },
             hide_index=True, 
             use_container_width=True 
         )
-    else:
-        st.error("No skater data found in global calculation.")# =========================================
+   else:
+        st.error("No skater data found in global calculation.")
+
+# =========================================
+# TAB 2: SCHEDULE
+# =========================================
+with tab2:
+    st.header("📅 Weekly Schedule & Off-Nights")
+    st.caption("Maximize your games played by targeting teams playing on light nights (Off-Nights: Mon, Wed, Fri, Sun).")
+    
+    try:
+        today_date = date.today()
+        weeks = get_fantasy_weeks()
+        current_week = next((w for w in weeks if w['start'] <= today_date <= w['end']), weeks[0])
+        
+        start_str = str(current_week['start'])
+        end_str = str(current_week['end'])
+        
+        st.markdown(f"**Current Fantasy Week:** `{start_str}` to `{end_str}`")
+        
+        week_sched = get_nhl_schedule(start_str)
+        if week_sched:
+            sched_data = []
+            for d, games in week_sched.items():
+                if start_str <= d <= end_str:
+                    dt = datetime.strptime(d, "%Y-%m-%d")
+                    is_off_night = dt.weekday() in [0, 2, 4, 6] 
+                    for team, opp in games.items():
+                        sched_data.append({'Team': team, 'Date': d, 'Off-Night': is_off_night})
+            
+            if sched_data:
+                sdf = pd.DataFrame(sched_data)
+                team_summary = sdf.groupby('Team').agg(
+                    Total_Games=('Date', 'count'),
+                    Off_Nights=('Off-Night', 'sum')
+                ).reset_index().sort_values(by=['Off_Nights', 'Total_Games'], ascending=[False, False])
+                
+                team_summary['Logo'] = team_summary['Team'].apply(get_team_logo)
+                
+                st.dataframe(
+                    team_summary[['Logo', 'Team', 'Total_Games', 'Off_Nights']].style.background_gradient(cmap="Purples", subset=['Off_Nights']),
+                    column_config={"Logo": st.column_config.ImageColumn("Team", width="small")},
+                    hide_index=True, use_container_width=True
+                )
+    except Exception as e:
+        st.warning(f"Could not load schedule: {e}")
+
+# =========================================
 # TAB 3: WAR ROOM (Blockbuster Edition)
 # =========================================
 with tab3:
