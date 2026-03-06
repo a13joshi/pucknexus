@@ -243,21 +243,64 @@ with tab1:
                  .background_gradient(cmap="RdYlGn", subset=heatmap_cols),
             height=800, 
             column_config={
-                # Labels set to "" to prevent Streamlit duplication glitches
                 "Headshot": st.column_config.ImageColumn("", width="small"),
                 "Logo": st.column_config.ImageColumn("", width="small"),
                 "Team": st.column_config.TextColumn("Team", width="small"),
                 "Player": st.column_config.TextColumn("Player", width="medium"),
                 "Pos": st.column_config.TextColumn("Pos", width="small"),
                 "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
-                "VORP": st.column_config.NumberColumn("Scarcity", format="%.2f", width="small"), # Red bar removed
+                "VORP": st.column_config.NumberColumn("Scarcity", format="%.2f", width="small"),
                 "GP": st.column_config.NumberColumn("GP", width="small")
             },
             hide_index=True, 
             use_container_width=True 
         )
-   else:
+    else:
         st.error("No skater data found in global calculation.")
+
+# =========================================
+# TAB 2: SCHEDULE
+# =========================================
+with tab2:
+    st.header("📅 Weekly Schedule & Off-Nights")
+    st.caption("Maximize your games played by targeting teams playing on light nights (Off-Nights: Mon, Wed, Fri, Sun).")
+    
+    try:
+        today_date = date.today()
+        weeks = get_fantasy_weeks()
+        current_week = next((w for w in weeks if w['start'] <= today_date <= w['end']), weeks[0])
+        
+        start_str = str(current_week['start'])
+        end_str = str(current_week['end'])
+        
+        st.markdown(f"**Current Fantasy Week:** `{start_str}` to `{end_str}`")
+        
+        week_sched = get_nhl_schedule(start_str)
+        if week_sched:
+            sched_data = []
+            for d, games in week_sched.items():
+                if start_str <= d <= end_str:
+                    dt = datetime.strptime(d, "%Y-%m-%d")
+                    is_off_night = dt.weekday() in [0, 2, 4, 6] 
+                    for team, opp in games.items():
+                        sched_data.append({'Team': team, 'Date': d, 'Off-Night': is_off_night})
+            
+            if sched_data:
+                sdf = pd.DataFrame(sched_data)
+                team_summary = sdf.groupby('Team').agg(
+                    Total_Games=('Date', 'count'),
+                    Off_Nights=('Off-Night', 'sum')
+                ).reset_index().sort_values(by=['Off_Nights', 'Total_Games'], ascending=[False, False])
+                
+                team_summary['Logo'] = team_summary['Team'].apply(get_team_logo)
+                
+                st.dataframe(
+                    team_summary[['Logo', 'Team', 'Total_Games', 'Off_Nights']].style.background_gradient(cmap="Purples", subset=['Off_Nights']),
+                    column_config={"Logo": st.column_config.ImageColumn("Team", width="small")},
+                    hide_index=True, use_container_width=True
+                )
+    except Exception as e:
+        st.warning(f"Could not load schedule: {e}")
 
 # =========================================
 # TAB 2: SCHEDULE
