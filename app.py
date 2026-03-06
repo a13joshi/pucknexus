@@ -223,17 +223,17 @@ with tab1:
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
         # --- UI LAYOUT ---
-        st.markdown("### 🎯 Positional Scarcity Dashboard")
-        st.caption("Players are now ranked by **VORP** (Value Over Replacement). This reveals true value by comparing a player's raw Z-Score to the Top 12 average at their specific position.")
+        st.markdown("### 🎯 Player Value Dashboard")
+        st.caption("Players are sorted by their **Nexus Score** (overall mathematical value). The **VORP** column reveals their scarcity by comparing that score to the Top 12 average at their specific position.")
 
         # Filter UI
         col_f, col_s = st.columns([3, 1])
         with col_f:
             selected_pos = st.multiselect("Filter Position", ['C', 'L', 'R', 'D'], default=['C', 'L', 'R', 'D'], key="dash_pos")
         
-        # Apply Filters and Sort by the new VORP metric
+        # Apply Filters and Sort by Nexus Score (Total Value) instead of VORP
         final = final[final['Pos'].isin(selected_pos)] if 'Pos' in final.columns else final
-        final = final.sort_values(by="VORP", ascending=False)
+        final = final.sort_values(by="Total Value", ascending=False)
         
         # Image/Logo Logic
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
@@ -249,7 +249,6 @@ with tab1:
                  .background_gradient(cmap="RdYlGn", subset=heatmap_cols),
             height=800, 
             column_config={
-                # 3. Lock these specific columns to the size of their content
                 "Headshot": st.column_config.ImageColumn("Img", width="small"),
                 "Logo": st.column_config.ImageColumn("Team", width="small"),
                 "Player": st.column_config.TextColumn("Player", width="medium"),
@@ -258,7 +257,7 @@ with tab1:
                 "GP": st.column_config.NumberColumn("GP", width="small"),
                 
                 "VORP": st.column_config.ProgressColumn("Scarcity (VORP)", format="%.2f", min_value=-3, max_value=5),
-                "Total Value": st.column_config.NumberColumn("Base Z-Score", format="%.2f"),
+                "Total Value": st.column_config.NumberColumn("Nexus Score", format="%.2f"), # Rebranded here!
             },
             hide_index=True, 
             use_container_width=True 
@@ -612,16 +611,43 @@ with tab6:
                     else:
                         st.info("No free agents have games remaining this week.")
             
-            c1, c2 = st.columns(2)
-            with c1:
-                st.subheader("💎 Free Agents")
-                # Add a green highlight to players with heavy remaining schedules
-                st.dataframe(fa[cols].style.background_gradient(cmap="Greens", subset=['Rem G', 'Off-Nights']), column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")}, hide_index=True, use_container_width=True, height=600)
-            with c2:
-                st.subheader("📋 My Roster")
-                ros_cols = ['Headshot', 'Logo', 'name', 'Team', 'Pos', 'Total Value'] + cats
-                st.dataframe(ros[ros_cols], column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")}, hide_index=True, use_container_width=True, height=600)
-        except Exception as e: 
+            # --- FINAL UI LAYOUT ---
+            st.divider()
+            
+            # Define the exact columns we want to apply the red/green heatmap to
+            heatmap_subset = ['Total Value'] + cats
+            
+            # 1. Full-Width Roster
+            st.subheader("📋 My Roster")
+            ros_cols = ['Headshot', 'Logo', 'Name', 'Team', 'Pos', 'Total Value'] + cats
+            st.dataframe(
+                ros[ros_cols].style.format("{:.2f}", subset=['Total Value'])
+                             .background_gradient(cmap="RdYlGn", subset=heatmap_subset), 
+                column_config={
+                    "Logo": st.column_config.ImageColumn("Team", width="small"), 
+                    "Headshot": st.column_config.ImageColumn("Img", width="small"),
+                    "Total Value": st.column_config.NumberColumn("Z-Score", format="%.2f")
+                }, 
+                hide_index=True, 
+                use_container_width=True
+            )
+            
+            st.divider()
+            
+            # 2. Full-Width Free Agents
+            st.subheader("💎 Free Agents")
+            fa_cols = ['Headshot', 'Logo', 'Name', 'Team', 'Pos', 'Rem G', 'Off-Nights', 'Total Value'] + cats
+            st.dataframe(
+                fa[fa_cols].style.format("{:.2f}", subset=['Total Value'])
+                           .background_gradient(cmap="RdYlGn", subset=heatmap_subset), 
+                column_config={
+                    "Logo": st.column_config.ImageColumn("Team", width="small"), 
+                    "Headshot": st.column_config.ImageColumn("Img", width="small"),
+                    "Total Value": st.column_config.NumberColumn("Z-Score", format="%.2f")
+                }, 
+                hide_index=True, 
+                use_container_width=True
+            )except Exception as e: 
             st.info(f"Run 'Sync with Yahoo' to load data. System message: {e}")
 
 # =========================================
@@ -677,105 +703,155 @@ with tab7:
         st.warning("⚠️ yahoo_export.csv not found. Run 'Sync with Yahoo' in the Wire Hawk tab.")
 
 # =========================================
-# TAB 8: H2H MATCHUP SIMULATOR
+# TAB 8: H2H MATCHUP SIMULATOR (Live Data Edition)
 # =========================================
 with tab8:
     st.header("⚔️ H2H Matchup Simulator")
     try:
-        yahoo_df = pd.read_csv("yahoo_export.csv")
+        target_file = "yahoo_export.csv"
+        yahoo_df = pd.read_csv(target_file)
         yahoo_df['match_key'] = yahoo_df['name'].str.lower().str.strip()
 
-        # Get list of teams from your league
+        # Identify "My Team" to auto-select it in the dropdown
+        my_team_name = yahoo_df[yahoo_df['Is_Mine'] == True]['Fantasy_Team'].iloc[0] if 'Is_Mine' in yahoo_df.columns and not yahoo_df[yahoo_df['Is_Mine'] == True].empty else None
+        
         teams = sorted(yahoo_df['Fantasy_Team'].dropna().unique())
         
         if len(teams) >= 2:
-            st.markdown("Select the two teams matching up this week:")
             col1, col2 = st.columns(2)
-            with col1: team_a = st.selectbox("Team A", teams, index=0)
-            with col2: team_b = st.selectbox("Team B", teams, index=1)
+            
+            default_idx_a = teams.index(my_team_name) if my_team_name in teams else 0
+            default_idx_b = 1 if default_idx_a == 0 else 0
+            
+            with col1: team_a = st.selectbox("Team A", teams, index=default_idx_a)
+            with col2: team_b = st.selectbox("Team B", teams, index=default_idx_b)
 
-            if st.button("🔮 Simulate Week", use_container_width=True):
-                with st.spinner("Running Monte Carlo-style schedule projections..."):
-                    # 1. Get current week schedule
+            if st.button("🔮 Run Live Matchup Engine", use_container_width=True):
+                with st.spinner(f"Crunching live weekly stats and simulating remaining schedule based on {timeframe} trends..."):
+                    # --- 1. TIMEFRAME & SPLIT LOGIC ---
                     today_date = date.today()
+                    # Current stats pull up to yesterday. Remaining projections start today.
+                    yesterday_str = str(today_date - timedelta(days=1))
+                    today_str = str(today_date)
+                    
                     weeks = get_fantasy_weeks()
                     current_week = next((w for w in weeks if w['start'] <= today_date <= w['end']), weeks[0])
                     start_str = str(current_week['start'])
                     end_str = str(current_week['end'])
-                    week_sched = get_nhl_schedule(start_str)
+                    
+                    active_cats = [c for c in cats if weights[c] > 0]
+                    
+                    # --- 2. CURRENT STATS (Start of week to Yesterday) ---
+                    cw_df = load_skaters(calc_season, start_date=start_str, end_date=yesterday_str)
+                    if not cw_df.empty:
+                        cw_df['match_key'] = cw_df['Player'].str.lower().str.strip()
+                    else:
+                        cw_df = pd.DataFrame(columns=['match_key'] + active_cats)
+                        
+                    # --- 3. PROJECTED PER-GAME STATS (Based on Global Timeframe) ---
+                    proj_df = s_df_global.copy()
+                    proj_df['match_key'] = proj_df['Player'].str.lower().str.strip()
+                    
+                    for c in active_cats:
+                        if c in proj_df.columns:
+                            proj_df[c] = pd.to_numeric(proj_df[c], errors='coerce').fillna(0)
+                            proj_df[f"{c}_pg"] = proj_df[c] / proj_df['GP'].clip(lower=1) # Avoid div by zero
+                        else:
+                            proj_df[f"{c}_pg"] = 0.0
 
-                    def get_team_games(nhl_team):
-                        if not week_sched: return 0
+                    # --- 4. REMAINING SCHEDULE (Today to End of Week) ---
+                    rem_sched = get_nhl_schedule(today_str) 
+                    def get_rem_games(nhl_team):
+                        if not rem_sched: return 0
                         count = 0
-                        for day, games in week_sched.items():
-                            if start_str <= day <= end_str:
+                        for day, games in rem_sched.items():
+                            if today_str <= day <= end_str:
                                 if nhl_team in games: count += 1
                         return count
+                        
+                    proj_df['Rem_G'] = proj_df['Team'].apply(get_rem_games)
 
-                    # 2. Get Rosters and active categories
-                    active_cats = [c for c in cats if weights[c] > 0]
-                    s_cat_cols = [f"{c}V" for c in active_cats]
-
+                    # --- 5. ROSTER SPLITS ---
                     roster_a = yahoo_df[(yahoo_df['Fantasy_Team'] == team_a) & (yahoo_df['Status'] == 'Rostered')]
                     roster_b = yahoo_df[(yahoo_df['Fantasy_Team'] == team_b) & (yahoo_df['Status'] == 'Rostered')]
 
-                    # Merge with Skater Math
-                    s_cols = ['match_key', 'Team'] + s_cat_cols
-                    team_a_skaters = pd.merge(roster_a, final[s_cols], on='match_key', how='inner')
-                    team_b_skaters = pd.merge(roster_b, final[s_cols], on='match_key', how='inner')
-
-                    # 3. Calculate Projected Output (Z-Score * Games Played This Week)
-                    team_a_proj = {}
-                    team_b_proj = {}
-
-                    for cat in s_cat_cols:
-                        team_a_proj[cat] = sum(row[cat] * get_team_games(row['Team']) for _, row in team_a_skaters.iterrows())
-                        team_b_proj[cat] = sum(row[cat] * get_team_games(row['Team']) for _, row in team_b_skaters.iterrows())
-
-                    # 4. Display Results
+                    # --- 6. CALCULATE TOTALS ---
+                    team_a_cw = pd.merge(roster_a, cw_df, on='match_key', how='inner') if not cw_df.empty else pd.DataFrame()
+                    team_a_cur = {c: team_a_cw[c].sum() if c in team_a_cw.columns else 0 for c in active_cats}
+                    
+                    team_b_cw = pd.merge(roster_b, cw_df, on='match_key', how='inner') if not cw_df.empty else pd.DataFrame()
+                    team_b_cur = {c: team_b_cw[c].sum() if c in team_b_cw.columns else 0 for c in active_cats}
+                    
+                    team_a_proj_df = pd.merge(roster_a, proj_df, on='match_key', how='inner')
+                    team_a_rem = {c: sum(row[f"{c}_pg"] * row['Rem_G'] for _, row in team_a_proj_df.iterrows()) for c in active_cats}
+                    
+                    team_b_proj_df = pd.merge(roster_b, proj_df, on='match_key', how='inner')
+                    team_b_rem = {c: sum(row[f"{c}_pg"] * row['Rem_G'] for _, row in team_b_proj_df.iterrows()) for c in active_cats}
+                    
+                    # --- 7. COMPILE DATAFRAMES FOR UI ---
+                    current_data, rem_data, final_data = [], [], []
+                    a_wins, b_wins, ties = 0, 0, 0
+                    
+                    for c in active_cats:
+                        a_cur, b_cur = team_a_cur[c], team_b_cur[c]
+                        a_rem, b_rem = team_a_rem[c], team_b_rem[c]
+                        a_tot, b_tot = a_cur + a_rem, b_cur + b_rem
+                        
+                        current_data.append({'Category': c, team_a: a_cur, team_b: b_cur})
+                        rem_data.append({'Category': c, team_a: a_rem, team_b: b_rem})
+                        
+                        # Determine winner (Standard Yahoo: Higher is better for all skater cats)
+                        if a_tot > b_tot:
+                            winner, a_wins = team_a, a_wins + 1
+                        elif b_tot > a_tot:
+                            winner, b_wins = team_b, b_wins + 1
+                        else:
+                            winner, ties = "Tie", ties + 1
+                            
+                        final_data.append({'Category': c, team_a: a_tot, team_b: b_tot, 'Winner': winner})
+                        
+                    # --- BUILD THE UI ---
                     st.divider()
-                    st.subheader(f"Projected Final Score")
-                    st.caption(f"Based on NHL Schedule from {start_str} to {end_str}")
-
-                    # Build Comparison DataFrame
-                    comp_df = pd.DataFrame({
-                        'Category': active_cats,
-                        team_a: [team_a_proj[f"{c}V"] for c in active_cats],
-                        team_b: [team_b_proj[f"{c}V"] for c in active_cats]
-                    })
-
-                    # Determine winner for each category
-                    comp_df['Winner'] = comp_df.apply(
-                        lambda row: team_a if row[team_a] > row[team_b] else (team_b if row[team_b] > row[team_a] else 'Tie'), axis=1
-                    )
-
-                    # Tally score
-                    a_wins = len(comp_df[comp_df['Winner'] == team_a])
-                    b_wins = len(comp_df[comp_df['Winner'] == team_b])
-                    ties = len(comp_df[comp_df['Winner'] == 'Tie'])
-
+                    
                     # Big Scoreboard Metric
                     st.markdown(f"""
                         <div style="background-color: #1c1f26; padding: 20px; border-radius: 10px; border-left: 5px solid {'#00CC96' if a_wins > b_wins else ('#FF914D' if a_wins == b_wins else '#FF4B4B')}; text-align: center; margin-bottom: 20px;">
-                            <h3 style="margin:0; color: #888;">{team_a} vs {team_b}</h3>
+                            <h3 style="margin:0; color: #888;">Projected Final: {team_a} vs {team_b}</h3>
                             <h1 style="margin:0; font-size: 50px;">{a_wins} - {b_wins} - {ties}</h1>
                         </div>
                     """, unsafe_allow_html=True)
-
-                    # Detail Table
-                    st.markdown("### Category Breakdown")
-                    st.caption("Values are projected Z-Scores adjusted for the number of games played by each roster this week.")
                     
-                    # Highlight the winning cell in green
+                    col_cur, col_rem = st.columns(2)
+                    
+                    with col_cur:
+                        st.subheader("🏒 Current Weekly Score")
+                        st.caption(f"Actual stats accumulated from {start_str} to yesterday.")
+                        df_cur = pd.DataFrame(current_data)
+                        st.dataframe(
+                            df_cur.style.highlight_max(subset=[team_a, team_b], color='#2e7b50', axis=1).format({team_a: "{:.0f}", team_b: "{:.0f}"}), 
+                            use_container_width=True, hide_index=True
+                        )
+                        
+                    with col_rem:
+                        st.subheader("🔮 Projected Remaining")
+                        st.caption(f"Expected output from today to {end_str} based on **{timeframe}** trends.")
+                        df_rem = pd.DataFrame(rem_data)
+                        st.dataframe(
+                            df_rem.style.highlight_max(subset=[team_a, team_b], color='#2e7b50', axis=1).format({team_a: "{:.1f}", team_b: "{:.1f}"}), 
+                            use_container_width=True, hide_index=True
+                        )
+                        
+                    st.subheader("🏆 Final Projected Box Score")
+                    st.caption("Current Weekly Score + Projected Remaining Output")
+                    df_final = pd.DataFrame(final_data)
                     st.dataframe(
-                        comp_df.style.highlight_max(subset=[team_a, team_b], color='#2e7b50', axis=1).format({team_a: "{:.2f}", team_b: "{:.2f}"}), 
-                        use_container_width=True, 
-                        hide_index=True
+                        df_final.style.highlight_max(subset=[team_a, team_b], color='#2e7b50', axis=1).format({team_a: "{:.1f}", team_b: "{:.1f}"}), 
+                        use_container_width=True, hide_index=True
                     )
         else:
             st.info("Not enough teams found in yahoo_export.csv. Ensure you have run the sync.")
     except FileNotFoundError:
-        st.warning("⚠️ yahoo_export.csv not found. Run 'Sync with Yahoo' in the Wire Hawk tab.")
+        st.warning("⚠️ yahoo_export.csv not found. Run 'Sync with Yahoo' in the Control Center.")
 
 # =========================================
 # TAB 9: PLAYOFF PRIMER

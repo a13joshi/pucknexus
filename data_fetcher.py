@@ -75,7 +75,7 @@ def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
     if end_date: cayenne_exp += f" and gameDate <= \"{end_date}\""
 
     params = {
-        "isAggregate": "false", 
+        "isAggregate": "true" if (start_date or end_date) else "false", 
         "isGame": "false", 
         "sort": "[{\"property\":\"points\",\"direction\":\"DESC\"}]", 
         "cayenneExp": cayenne_exp
@@ -174,7 +174,8 @@ def get_nhl_goalie_stats(season="20252026", start_date=None, end_date=None):
     if end_date: cayenne_exp += f" and gameDate <= \"{end_date}\""
 
     params = {
-        "isAggregate": "false", "isGame": "false",
+        "isAggregate": "true" if (start_date or end_date) else "false", 
+        "isGame": "false",
         "sort": "[{\"property\":\"wins\",\"direction\":\"DESC\"}]",
         "cayenneExp": cayenne_exp
     }
