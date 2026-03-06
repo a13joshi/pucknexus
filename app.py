@@ -673,23 +673,29 @@ with tab7:
     try:
         yahoo_df = pd.read_csv("yahoo_export.csv")
         
+        # 1. Define Category Columns to Pull (based on your active sidebar weights)
         active_cats = [c for c in cats if weights[c] > 0]
         s_cat_cols = [f"{c}V" for c in active_cats]
         g_cat_cols = ['WV', 'GAAV', 'SV%V', 'SHOV']
         
+        # Safely only grab columns that actually generated, using the new NexusScore name
         s_cols = ['match_key', 'NexusScore'] + [c for c in s_cat_cols if c in evaluated_df.columns]
         g_cols = ['match_key', 'NexusScore'] + [c for c in g_cat_cols if c in evaluated_goalies.columns]
         
+        # 2. Merge Skaters & Goalies with Yahoo Data
         skater_league = pd.merge(yahoo_df, evaluated_df[s_cols], on='match_key', how='inner')
         goalie_league = pd.merge(yahoo_df, evaluated_goalies[g_cols], on='match_key', how='inner')
         
+        # 3. Combine & Clean (Fill missing cats with 0, e.g., skaters have 0 GAA)
         full_league_df = pd.concat([skater_league, goalie_league]).fillna(0)
         rostered_df = full_league_df[full_league_df['Status'] == 'Rostered']
         
+        # 4. Group by Team and Sum everything
         all_cat_cols = [c for c in s_cat_cols + g_cat_cols if c in rostered_df.columns]
         team_power = rostered_df.groupby(['Fantasy_Team', 'Manager'])[['NexusScore'] + all_cat_cols].sum().reset_index()
         team_power = team_power.sort_values(by='NexusScore', ascending=True) 
         
+        # 5. Visualization 1: Overall True Power
         st.subheader("⚡ True Team Power (Skaters + Goalies)")
         fig1 = px.bar(team_power, x='NexusScore', y='Fantasy_Team', orientation='h', 
                      color='NexusScore', color_continuous_scale='viridis', text_auto='.2f')
@@ -698,6 +704,7 @@ with tab7:
         
         st.divider()
         
+        # 6. Visualization 2: Category Dominance
         st.subheader("🧬 Category Dominance Breakdown")
         st.caption("Hover over the segments to see exactly where teams are gaining or losing value.")
         fig2 = px.bar(team_power, x=all_cat_cols, y='Fantasy_Team', orientation='h',
