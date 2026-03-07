@@ -155,7 +155,6 @@ s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
 g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
 
 # --- FIX: THE FANTASY BASELINE ---
-# Filter out 4th liners to establish a realistic mathematical average
 min_gp = 5 if timeframe == "Full Season" else 1
 
 if not g_df_global.empty:
@@ -164,6 +163,11 @@ if not g_df_global.empty:
     if 'Total Z' in evaluated_goalies.columns:
         evaluated_goalies = evaluated_goalies.rename(columns={'Total Z': 'NexusScore'})
     evaluated_goalies['match_key'] = evaluated_goalies['Player'].str.lower().str.strip()
+    
+    # Rescue Goalies data
+    restore_g = [c for c in ['playerId', 'Team'] if c not in evaluated_goalies.columns and c in g_df_global.columns]
+    if restore_g:
+        evaluated_goalies = pd.merge(evaluated_goalies, g_df_global[['Player'] + restore_g].drop_duplicates(subset=['Player']), on='Player', how='left')
 else:
     evaluated_goalies = pd.DataFrame()
 
@@ -175,9 +179,10 @@ if not s_df_global.empty:
         evaluated_df = evaluated_df.rename(columns={'Total Z': 'NexusScore'})
         evaluated_df['match_key'] = evaluated_df['Player'].str.lower().str.strip()
         
-        # FIX: Ensure playerId survives the math engine so images can render
-        if 'playerId' not in evaluated_df.columns and 'playerId' in s_df_global.columns:
-            evaluated_df = pd.merge(evaluated_df, s_df_global[['Player', 'playerId']].drop_duplicates(), on='Player', how='left')
+        # FIX: Ensure playerId and Team survive so images and logos render perfectly
+        restore_s = [c for c in ['playerId', 'Team'] if c not in evaluated_df.columns and c in s_df_global.columns]
+        if restore_s:
+            evaluated_df = pd.merge(evaluated_df, s_df_global[['Player'] + restore_s].drop_duplicates(subset=['Player']), on='Player', how='left')
     else:
         st.error("Error: 'Total Z' column not generated. Check monster_math.py.")
         st.stop()
@@ -231,27 +236,32 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # EXACT REQUESTED ORDER
-        cols_order = ['Headshot', 'Logo', 'Team', 'Player', 'Pos', 'NexusScore', 'VORP', 'GP'] + cats
+        # EXACT REQUESTED ORDER: Scarcity -> NexusScore -> GP
+        cols_order = ['Headshot', 'Logo', 'Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
         actual_cols = [c for c in cols_order if c in final.columns]
         
-        # Removed VORP from heatmap to reduce red overload
         heatmap_cols = ['NexusScore'] + [c for c in cats if c in final.columns]
+
+        # Dynamically build column config so ALL columns snap to text width
+        cfg = {
+            "Headshot": st.column_config.ImageColumn("📷", width="small"),
+            "Logo": st.column_config.ImageColumn("🏒", width="small"),
+            "Team": st.column_config.TextColumn("Team", width="small"),
+            "Player": st.column_config.TextColumn("Player", width="medium"),
+            "Pos": st.column_config.TextColumn("Pos", width="small"),
+            "VORP": st.column_config.NumberColumn("Scarcity", format="%.2f", width="small"),
+            "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
+            "GP": st.column_config.NumberColumn("GP", width="small")
+        }
+        # Force all stat categories to be 'small' width
+        for c in cats:
+            cfg[c] = st.column_config.NumberColumn(c, width="small")
 
         st.dataframe(
             final[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore'])
                  .background_gradient(cmap="RdYlGn", subset=heatmap_cols),
             height=800, 
-            column_config={
-                "Headshot": st.column_config.ImageColumn("", width="small"),
-                "Logo": st.column_config.ImageColumn("", width="small"),
-                "Team": st.column_config.TextColumn("Team", width="small"),
-                "Player": st.column_config.TextColumn("Player", width="medium"),
-                "Pos": st.column_config.TextColumn("Pos", width="small"),
-                "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
-                "VORP": st.column_config.NumberColumn("Scarcity", format="%.2f", width="small"),
-                "GP": st.column_config.NumberColumn("GP", width="small")
-            },
+            column_config=cfg,
             hide_index=True, 
             use_container_width=True 
         )
