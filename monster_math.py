@@ -9,6 +9,8 @@ def calculate_z_scores(df, categories):
             - List ['G', 'A']: Assumes all are "Higher is Better".
             - Dict {'GAA': True, 'W': False}: True means "Lower is Better" (Invert).
     """
+    df = df.copy()
+
     # 1. Normalize Input: Convert simple list to dictionary (Default: False/No Invert)
     if isinstance(categories, list):
         cat_config = {c: False for c in categories}

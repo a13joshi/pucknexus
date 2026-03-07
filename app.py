@@ -236,23 +236,28 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
+        # FIX: Rename the column internally to break Streamlit's hidden layout cache
+        if 'Team' in final.columns:
+            final = final.rename(columns={'Team': 'NHL Team'})
+
         # EXACT REQUESTED ORDER: Scarcity -> NexusScore -> GP
-        cols_order = ['Headshot', 'Logo', 'Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
+        cols_order = ['Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
         actual_cols = [c for c in cols_order if c in final.columns]
         
         heatmap_cols = ['NexusScore'] + [c for c in cats if c in final.columns]
 
         # Dynamically build column config so ALL columns snap to text width
         cfg = {
-            "Headshot": st.column_config.ImageColumn("📷", width="small"),
-            "Logo": st.column_config.ImageColumn("🏒", width="small"),
-            "Team": st.column_config.TextColumn("Team", width="small"),
+            "Headshot": st.column_config.ImageColumn("Pic", width="small"),
+            "Logo": st.column_config.ImageColumn("Logo", width="small"),
+            "NHL Team": st.column_config.TextColumn("Team", width="small"),
             "Player": st.column_config.TextColumn("Player", width="medium"),
             "Pos": st.column_config.TextColumn("Pos", width="small"),
             "VORP": st.column_config.NumberColumn("Scarcity", format="%.2f", width="small"),
             "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
             "GP": st.column_config.NumberColumn("GP", width="small")
         }
+        
         # Force all stat categories to be 'small' width
         for c in cats:
             cfg[c] = st.column_config.NumberColumn(c, width="small")
