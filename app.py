@@ -154,7 +154,21 @@ calc_end_date = stats_end_date if stats_end_date else str(date.today())
 s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
 g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
 
-# --- FIX: THE FANTASY BASELINE ---
+# FIX: Rescue missing 'Team' and 'playerId' when pulling Custom Date Ranges (NHL API drops them on aggregates)
+if timeframe != "Full Season":
+    s_base = load_skaters(calc_season, None, None)
+    if not s_df_global.empty and not s_base.empty:
+        missing_s = [c for c in ['Team', 'playerId', 'Pos'] if c not in s_df_global.columns and c in s_base.columns]
+        if missing_s:
+            s_df_global = pd.merge(s_df_global, s_base[['Player'] + missing_s].drop_duplicates('Player'), on='Player', how='left')
+            
+    g_base = load_goalies(calc_season, None, None)
+    if not g_df_global.empty and not g_base.empty:
+        missing_g = [c for c in ['Team', 'playerId'] if c not in g_df_global.columns and c in g_base.columns]
+        if missing_g:
+            g_df_global = pd.merge(g_df_global, g_base[['Player'] + missing_g].drop_duplicates('Player'), on='Player', how='left')
+
+# --- THE FANTASY BASELINE ---
 min_gp = 5 if timeframe == "Full Season" else 1
 
 if not g_df_global.empty:
@@ -164,7 +178,7 @@ if not g_df_global.empty:
         evaluated_goalies = evaluated_goalies.rename(columns={'Total Z': 'NexusScore'})
     evaluated_goalies['match_key'] = evaluated_goalies['Player'].str.lower().str.strip()
     
-    # Rescue Goalies data
+    # Final safety rescue
     restore_g = [c for c in ['playerId', 'Team'] if c not in evaluated_goalies.columns and c in g_df_global.columns]
     if restore_g:
         evaluated_goalies = pd.merge(evaluated_goalies, g_df_global[['Player'] + restore_g].drop_duplicates(subset=['Player']), on='Player', how='left')
@@ -179,7 +193,67 @@ if not s_df_global.empty:
         evaluated_df = evaluated_df.rename(columns={'Total Z': 'NexusScore'})
         evaluated_df['match_key'] = evaluated_df['Player'].str.lower().str.strip()
         
-        # FIX: Ensure playerId and Team survive so images and logos render perfectly
+        # Final safety rescue
+        restore_s = [c for c in ['playerId', 'Team'] if c not in evaluated_df.columns and c in s_df_global.columns]
+        if restore_s:
+            evaluated_df = pd.merge(evaluated_df, s_df_global[['Player'] + restore_s].drop_duplicates(subset=['Player']), on='Player', how='left')
+    else:
+        st.error("Error: 'Total Z' column not generated. Check monster_math.py.")
+        st.stop()
+else:
+    evaluated_df = pd.DataFrame()
+
+# Safety stop for the UI
+if evaluated_df.empty:
+    st.error("No skater data available. Please check your NHL API connection.")
+    st.stop()# --- GLOBAL DATA CALCULATION ---
+calc_season = season_choice if 'season_choice' in locals() else "20252026"
+calc_start_date = stats_start_date if stats_start_date else "2025-10-01"
+calc_end_date = stats_end_date if stats_end_date else str(date.today())
+
+s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
+g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
+
+# FIX: Rescue missing 'Team' and 'playerId' when pulling Custom Date Ranges (NHL API drops them on aggregates)
+if timeframe != "Full Season":
+    s_base = load_skaters(calc_season, None, None)
+    if not s_df_global.empty and not s_base.empty:
+        missing_s = [c for c in ['Team', 'playerId', 'Pos'] if c not in s_df_global.columns and c in s_base.columns]
+        if missing_s:
+            s_df_global = pd.merge(s_df_global, s_base[['Player'] + missing_s].drop_duplicates('Player'), on='Player', how='left')
+            
+    g_base = load_goalies(calc_season, None, None)
+    if not g_df_global.empty and not g_base.empty:
+        missing_g = [c for c in ['Team', 'playerId'] if c not in g_df_global.columns and c in g_base.columns]
+        if missing_g:
+            g_df_global = pd.merge(g_df_global, g_base[['Player'] + missing_g].drop_duplicates('Player'), on='Player', how='left')
+
+# --- THE FANTASY BASELINE ---
+min_gp = 5 if timeframe == "Full Season" else 1
+
+if not g_df_global.empty:
+    g_df_math_pool = g_df_global[g_df_global['GP'] >= (min_gp - 2)] # Goalies play less
+    evaluated_goalies = calculate_z_scores(g_df_math_pool, {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
+    if 'Total Z' in evaluated_goalies.columns:
+        evaluated_goalies = evaluated_goalies.rename(columns={'Total Z': 'NexusScore'})
+    evaluated_goalies['match_key'] = evaluated_goalies['Player'].str.lower().str.strip()
+    
+    # Final safety rescue
+    restore_g = [c for c in ['playerId', 'Team'] if c not in evaluated_goalies.columns and c in g_df_global.columns]
+    if restore_g:
+        evaluated_goalies = pd.merge(evaluated_goalies, g_df_global[['Player'] + restore_g].drop_duplicates(subset=['Player']), on='Player', how='left')
+else:
+    evaluated_goalies = pd.DataFrame()
+
+if not s_df_global.empty:
+    s_df_math_pool = s_df_global[s_df_global['GP'] >= min_gp]
+    evaluated_df = calculate_z_scores(s_df_math_pool, weights)
+    
+    if 'Total Z' in evaluated_df.columns:
+        evaluated_df = evaluated_df.rename(columns={'Total Z': 'NexusScore'})
+        evaluated_df['match_key'] = evaluated_df['Player'].str.lower().str.strip()
+        
+        # Final safety rescue
         restore_s = [c for c in ['playerId', 'Team'] if c not in evaluated_df.columns and c in s_df_global.columns]
         if restore_s:
             evaluated_df = pd.merge(evaluated_df, s_df_global[['Player'] + restore_s].drop_duplicates(subset=['Player']), on='Player', how='left')
@@ -236,7 +310,7 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # FIX: Rename the column internally to break Streamlit's hidden layout cache
+        # Break Streamlit's hidden layout cache
         if 'Team' in final.columns:
             final = final.rename(columns={'Team': 'NHL Team'})
 
@@ -246,12 +320,12 @@ with tab1:
         
         heatmap_cols = ['NexusScore'] + [c for c in cats if c in final.columns]
 
-        # Dynamically build column config so ALL columns snap to text width
+        # Dynamically build column config so ALL columns snap to text width ("small")
         cfg = {
             "Headshot": st.column_config.ImageColumn("Pic", width="small"),
             "Logo": st.column_config.ImageColumn("Logo", width="small"),
             "NHL Team": st.column_config.TextColumn("Team", width="small"),
-            "Player": st.column_config.TextColumn("Player", width="medium"),
+            "Player": st.column_config.TextColumn("Player", width="medium"), # Kept medium so long names don't wrap awkwardly
             "Pos": st.column_config.TextColumn("Pos", width="small"),
             "VORP": st.column_config.NumberColumn("Scarcity", format="%.2f", width="small"),
             "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
