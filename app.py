@@ -246,43 +246,40 @@ with tab1:
         final = final[final['Pos'].isin(selected_pos)] if 'Pos' in final.columns else final
         final = final.sort_values(by="NexusScore", ascending=False)
         
-        # Safe Image Generation
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # Break Streamlit's hidden layout cache
-        if 'Team' in final.columns:
-            final = final.rename(columns={'Team': 'NHL Team'})
+        # FIX 1: Create a safe display copy so we don't break the 'Team' column for the Wire Hawk!
+        display_df = final.copy()
+        if 'Team' in display_df.columns:
+            display_df = display_df.rename(columns={'Team': 'NHL Team'})
 
-        # EXACT REQUESTED ORDER: Scarcity -> NexusScore -> GP
         cols_order = ['Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
-        actual_cols = [c for c in cols_order if c in final.columns]
+        actual_cols = [c for c in cols_order if c in display_df.columns]
         
-        heatmap_cols = ['NexusScore'] + [c for c in cats if c in final.columns]
+        heatmap_cols = ['NexusScore'] + [c for c in cats if c in display_df.columns]
 
-        # Dynamically build column config so ALL columns snap to text width ("small")
         cfg = {
             "Headshot": st.column_config.ImageColumn("Pic", width="small"),
             "Logo": st.column_config.ImageColumn("Logo", width="small"),
             "NHL Team": st.column_config.TextColumn("Team", width="small"),
-            "Player": st.column_config.TextColumn("Player", width="medium"), # Kept medium so long names don't wrap awkwardly
+            "Player": st.column_config.TextColumn("Player", width="medium"), 
             "Pos": st.column_config.TextColumn("Pos", width="small"),
             "VORP": st.column_config.NumberColumn("Scarcity", format="%.2f", width="small"),
             "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
             "GP": st.column_config.NumberColumn("GP", width="small")
         }
         
-        # Force all stat categories to be 'small' width
         for c in cats:
             cfg[c] = st.column_config.NumberColumn(c, width="small")
 
         st.dataframe(
-            final[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore'])
+            display_df[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore'])
                  .background_gradient(cmap="RdYlGn", subset=heatmap_cols),
             height=800, 
             column_config=cfg,
             hide_index=True, 
-            use_container_width=True 
+            use_container_width=False # FIX 2: Turned OFF so columns snap tightly to text
         )
     else:
         st.error("No skater data found in global calculation.")
@@ -550,10 +547,13 @@ with tab6:
     if 'final' in locals() and not final.empty:
         try:
             y_data = pd.read_csv(target_file)
-            final['match_key'] = final['Player'].str.lower().str.strip()
+            
+            # Create a safe working copy
+            wire_df = final.copy()
+            wire_df['match_key'] = wire_df['Player'].str.lower().str.strip()
             y_data['match_key'] = y_data['name'].str.lower().str.strip()
             
-            merged = pd.merge(y_data, final, left_on='match_key', right_on='match_key', how='inner')
+            merged = pd.merge(y_data, wire_df, left_on='match_key', right_on='match_key', how='inner')
             merged = merged.drop_duplicates(subset=['match_key'])
             
             if 'Team' in merged.columns: merged['Logo'] = merged['Team'].apply(get_team_logo)
@@ -615,7 +615,6 @@ with tab6:
                         st.info("No free agents have games remaining this week.")
             
             st.divider()
-            
             heatmap_subset = ['NexusScore'] + cats
             
             st.subheader("📋 My Roster")
@@ -629,7 +628,7 @@ with tab6:
                     "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f")
                 }, 
                 hide_index=True, 
-                use_container_width=True
+                use_container_width=False # FIX: Turned OFF to snap to text
             )
             
             st.divider()
@@ -645,7 +644,7 @@ with tab6:
                     "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f")
                 }, 
                 hide_index=True, 
-                use_container_width=True
+                use_container_width=False # FIX: Turned OFF to snap to text
             )
         except Exception as e: 
             st.info(f"Run 'Sync with Yahoo' to load data. System message: {e}")
