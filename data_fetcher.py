@@ -6,14 +6,27 @@ from supabase_config import supabase  # Added for Phase 2
 # --- HELPER: PAGINATION ENGINE ---
 def _fetch_all(url, params, limit=100):
     """
-    Loops through the API in chunks (pages) to ensure we get EVERY player,
-    bypassing server-side limits that cut off data.
+    Loops through the API in chunks (pages) to ensure we get EVERY player.
+    Includes smart-routing for aggregates and emergency loop-breakers.
     """
+    # 1. SMART ROUTING: The NHL API breaks pagination on custom date ranges. 
+    # If we are aggregating, we must pull everyone in one giant chunk (limit=-1).
+    if params.get("isAggregate") == "true":
+        params['limit'] = -1
+        try:
+            resp = requests.get(url, params=params).json()
+            return pd.DataFrame(resp.get('data', []))
+        except Exception as e:
+            print(f"❌ Error fetching aggregate data: {e}")
+            return pd.DataFrame()
+
+    # 2. STANDARD PAGINATION: For normal Full Season pulls
     all_data = []
     current_start = 0
-    
-    # Force a safe limit chunk size (API often breaks if requested > 100 at once for aggregates)
     params['limit'] = limit 
+    
+    # Track the first player of each page to detect infinite API loops
+    seen_signatures = set()
     
     while True:
         params['start'] = current_start
@@ -24,6 +37,14 @@ def _fetch_all(url, params, limit=100):
             if not data:
                 break
                 
+            # 🛑 INF-LOOP BREAKER: If the API ignores the 'start' parameter and 
+            # feeds us the exact same page we just looked at, break the loop!
+            page_sig = str(data[0].get('playerId', current_start))
+            if page_sig in seen_signatures:
+                print("⚠️ NHL API ignored pagination offset. Breaking loop to prevent crash.")
+                break
+            seen_signatures.add(page_sig)
+                
             all_data.extend(data)
             
             # If we got fewer items than the limit, we've reached the end
@@ -32,6 +53,10 @@ def _fetch_all(url, params, limit=100):
                 
             current_start += limit
             
+            # Emergency fallback (there are only ~900 NHL players)
+            if current_start > 5000:
+                break
+                
         except Exception as e:
             print(f"❌ Error during pagination at index {current_start}: {e}")
             break
