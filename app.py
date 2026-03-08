@@ -237,12 +237,11 @@ with tab1:
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
         # --- YAHOO OWNERSHIP & LEAGUE SIZE INTEGRATION ---
-        num_teams = 12 # Default fallback
+        num_teams = 12 
         try:
             y_data = pd.read_csv("yahoo_export.csv")
             y_data['match_key'] = y_data['name'].str.lower().str.strip()
             
-            # Dynamically count how many teams are in your specific league
             actual_teams = y_data['Fantasy_Team'].nunique()
             if actual_teams > 0:
                 num_teams = actual_teams
@@ -279,10 +278,11 @@ with tab1:
         if 'Team' in display_df.columns:
             display_df = display_df.rename(columns={'Team': 'NHL Team'})
 
-        # --- THE FIX: ADD NUMERICAL RANK ---
-        display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
+        # ADD NUMERICAL RANK
+        display_df['Rank'] = range(1, len(display_df) + 1)
 
-        cols_order = ['Rank', 'Own', 'Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
+        # EXACT REQUESTED ORDER: Pic -> Logo -> Team -> Own -> Rank -> Player -> ...
+        cols_order = ['Headshot', 'Logo', 'NHL Team', 'Own', 'Rank', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
         
         heatmap_cols = ['NexusScore'] + [c for c in cats if c in display_df.columns]
@@ -292,12 +292,13 @@ with tab1:
             if val == 'Taken': return 'background-color: rgba(255, 255, 255, 0.2); color: transparent;'
             return 'color: transparent;' 
 
+        # STRIPPED HEADERS & SQUARING: Using invisible spaces (" ", "  ", "   ") to blank out headers cleanly
         cfg = {
-            "Rank": st.column_config.NumberColumn("Rnk", width="small"),
-            "Own": st.column_config.TextColumn("Own", width="small"),
-            "Headshot": st.column_config.ImageColumn("Pic", width="small"),
-            "Logo": st.column_config.ImageColumn("", width="small"), 
+            "Headshot": st.column_config.ImageColumn("", width="small"),
+            "Logo": st.column_config.ImageColumn(" ", width="small"), 
             "NHL Team": st.column_config.TextColumn("Team", width="small"),
+            "Own": st.column_config.TextColumn("  ", width="small"), 
+            "Rank": st.column_config.NumberColumn("Rnk", width="small"),
             "Player": st.column_config.TextColumn("Player", width="medium"), 
             "Pos": st.column_config.TextColumn("Pos", width="small"),
             "VORP": st.column_config.ProgressColumn("Scarcity", format="%.2f", min_value=-2.0, max_value=4.0, width="small"), 
@@ -306,25 +307,22 @@ with tab1:
         }
         for c in cats: cfg[c] = st.column_config.NumberColumn(c, width="small")
 
-        # --- THE FIX: SEPARATORS & ASYMMETRICAL COLOR SCALING ---
+        # --- SEPARATORS & HIGH-END COLOR DIFFERENTIATION ---
         styled_table = display_df[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore']).map(color_own, subset=['Own'])
         
-        # 1. Apply Horizontal Separators by Round
         def round_separators(row):
-            # If the rank divides perfectly by the number of teams, draw an orange bottom border
             if row['Rank'] % num_teams == 0:
                 return ['border-bottom: 2px solid #FF914D;' for _ in row]
             return ['' for _ in row]
             
         styled_table = styled_table.apply(round_separators, axis=1)
         
-        # 2. Asymmetrical Heatmap (Restores the Red!)
         for c in heatmap_cols:
             if c in display_df.columns:
-                # Bottom 10% gets max red, but only the top 2% gets max green. 
-                # This perfectly spreads the middle 88% into readable yellows/oranges!
-                q_min = display_df[c].quantile(0.10) 
-                q_max = display_df[c].quantile(0.98) 
+                # FIX: Keep the floor at 5% to stop the "Sea of Red", but stretch the ceiling
+                # to the ABSOLUTE MAX. This forces 42 to be distinct from 29!
+                q_min = display_df[c].quantile(0.05) 
+                q_max = display_df[c].max() 
                 styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max)
 
         st.dataframe(
