@@ -20,7 +20,14 @@ def load_goalies(season, start_date, end_date=None):
 
 def get_team_logo(team_abbr):
     if not team_abbr or pd.isna(team_abbr): return ""
-    logo_map = {"NJD": "nj", "SJS": "sj", "TBL": "tb", "LAK": "la", "UTA": "utah", "VEG": "vgk", "VGK": "vgk", "MTL": "mtl", "WSH": "wsh", "CGY": "cgy", "WPG": "wpg"}
+    # Updated map for better visibility of specific team logos
+    logo_map = {
+        "NJD": "nj", "SJS": "sj", "TBL": "tb", "LAK": "la", 
+        "UTA": "utah", "VEG": "vgk", "VGK": "vgk", "MTL": "mtl", 
+        "WSH": "wsh", "CGY": "cgy", "WPG": "wpg",
+        "TBL": "lightning", # High contrast variant
+        "WSH": "capitals"    # High contrast variant
+    }
     code = logo_map.get(str(team_abbr).upper(), str(team_abbr).lower())
     return f"https://a.espncdn.com/combiner/i?img=/i/teamlogos/nhl/500/{code}.png&h=40&w=40"
 
@@ -59,6 +66,8 @@ st.caption("THE UNOFFICIAL FANTASY HOCKEY EXPANSION")
 
 # --- GLOBAL CONTROL CENTER (Replaces Sidebar) ---
 cats = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK']
+g_cats = ['W', 'GAA', 'SV%', 'SHO']
+all_strategy_cats = cats + g_cats
 
 # This expander acts as a dropdown menu at the top of the page
 with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
@@ -91,11 +100,12 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
     with col_strat:
         st.markdown("### 🧠 Strategy Weights")
         st.caption("Select categories to punt (sets value to 0).")
-        punt_cats = st.multiselect("🗑️ Punt Categories", options=cats, label_visibility="collapsed")
+        # Now includes goalie categories
+        punt_cats = st.multiselect("🗑️ Punt Categories", options=all_strategy_cats, label_visibility="collapsed")
+    
+        # Combined weights logic
+        weights = {cat: 0.0 if cat in punt_cats else 1.0 for cat in all_strategy_cats}
         
-        # Streamlined weights logic: If it's punted, it's 0. Otherwise, it's 1.
-        weights = {cat: 0.0 if cat in punt_cats else 1.0 for cat in cats}
-
     with col_yahoo:
         st.markdown("### 🦅 Yahoo Live Sync")
         from yahoo_bridge import get_yahoo_auth_url, exchange_code_for_token, get_user_leagues, fetch_yahoo_data
@@ -300,48 +310,50 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
+        # 1. THE "NONE" ASSASSIN: Fill NaNs with empty strings immediately
         display_df = final.copy()
+        display_df['Rank'] = range(1, len(display_df) + 1)
+        display_df = display_df.fillna("") 
+
         if 'Team' in display_df.columns: display_df = display_df.rename(columns={'Team': 'NHL Team'})
 
-        display_df['Rank'] = range(1, len(display_df) + 1)
-
         g_cats = ['W', 'GAA', 'SV%', 'SHO']
+        # 2. SWAP ORDER: NHL Team now comes before Logo
         cols_order = ['Own', 'Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
 
-        for col in ['NexusScore', 'GP'] + cats + g_cats:
-            if col in display_df.columns:
-                display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
-
-        # --- THE FIX: ENHANCED CONTRAST PROFILES ---
-        # 1. Base Stats (Right Side)
+        # 3. ADVANCED UI STYLING
         def base_style(val):
-            if pd.isna(val): return 'background-color: #1c1f26; color: transparent;'
+            # Empty strings (formerly None) get the anchor color and invisible text
+            if val == "": 
+                return 'background-color: #1c1f26; color: transparent; border: none;'
             return 'background-color: #0e1117; color: #ffffff;'
+            
         styled_table = display_df[actual_cols].style.map(base_style)
 
-        # 2. Player Info (Left Side) - Much lighter steel-grey to make it pop!
+        # 4. LIGHTER LEFT SIDE: Brighter steel-grey (#2A303C) for the profile section
         left_side_cols = ['Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos']
         def style_left(val):
+            if val == "": return 'background-color: #1c1f26; color: transparent;'
             return 'background-color: #2A303C; color: #ffffff;'
         styled_table = styled_table.map(style_left, subset=[c for c in left_side_cols if c in actual_cols])
 
-        # 3. GP Anchor
+        # 5. GP ANCHOR: Vertical divider matching the blank cell color
         def style_gp(val):
-            if pd.isna(val): return 'background-color: #1c1f26; color: transparent;'
+            if val == "": return 'background-color: #1c1f26; color: transparent;'
             return 'background-color: #1c1f26; color: #ffffff; font-weight: bold;'
         styled_table = styled_table.map(style_gp, subset=['GP'])
 
-        # 4. Ownership Blocks
         def color_own(val):
             if val == 'Mine': return 'background-color: #00CC96; color: transparent;'
             if val == 'Taken': return 'background-color: #333333; color: transparent;'
-            return 'background-color: #2A303C; color: transparent;' # Matches the new brighter left-side color
+            return 'background-color: #2A303C; color: transparent;' 
         styled_table = styled_table.map(color_own, subset=['Own'])
 
         def clean_na(val, fmt):
-            if pd.isna(val): return ""
-            return fmt.format(val)
+            if val == "": return ""
+            try: return fmt.format(float(val))
+            except: return str(val)
 
         fmt_dict = {
             'NexusScore': lambda x: clean_na(x, "{:.2f}"),
@@ -353,6 +365,8 @@ with tab1:
         }
         for c in cats: fmt_dict[c] = lambda x: clean_na(x, "{:.0f}")
 
+        styled_table = styled_table.format(formatter=fmt_dict)
+
         cfg = {
             "Own": st.column_config.Column("", width=30), 
             "Rank": st.column_config.NumberColumn("Rnk", width=40),
@@ -363,40 +377,39 @@ with tab1:
             "Pos": st.column_config.Column("Pos", width=40),
             "VORP": st.column_config.ProgressColumn("Scarcity", format="%.2f", min_value=-2.0, max_value=4.0, width=90), 
             "NexusScore": st.column_config.Column("NexusScore", width=75),
-            "GP": st.column_config.Column("GP", width=50),
-            "W": st.column_config.Column("W", width=50),
+            "GP": st.column_config.Column("GP", width=60),
+            "W": st.column_config.Column("W", width=60),
             "GAA": st.column_config.Column("GAA", width=65),
             "SV%": st.column_config.Column("SV%", width=65),
-            "SHO": st.column_config.Column("SHO", width=50)
+            "SHO": st.column_config.Column("SHO", width=60)
         }
-        for c in cats: cfg[c] = st.column_config.Column(c, width=55) 
+        for c in cats: cfg[c] = st.column_config.Column(c, width=65) 
 
-        styled_table = styled_table.format(formatter=fmt_dict)
-        
-        # --- THE FIX: THICK HORIZONTAL BAR SEPARATORS ---
+        # 6. THICK SEPARATOR BAR: Slate-grey bar every 12 rows
         def round_separators(row):
             styles = []
             for col in row.index:
                 if row['Rank'] % num_teams == 0:
-                    # Ripped out the orange text and replaced with a thick 4px slate-grey solid bar
                     styles.append('border-bottom: 4px solid #556070 !important;')
                 else:
                     styles.append('')
             return styles
-            
         styled_table = styled_table.apply(round_separators, axis=1)
         
+        # Heatmap gradients
+        # We must filter out empty strings for the quantile math
+        math_df = final.copy()
         normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
         for c in normal_heatmaps:
-            if c in display_df.columns:
-                q_min = display_df[c].quantile(0.05) 
-                q_max = display_df[c].max() 
+            if c in math_df.columns:
+                q_min = math_df[c].quantile(0.05) 
+                q_max = math_df[c].max() 
                 if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
                     styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max, text_color_threshold=0.5)
 
-        if 'GAA' in display_df.columns:
-            q_min = display_df['GAA'].min() 
-            q_max = display_df['GAA'].quantile(0.95) 
+        if 'GAA' in math_df.columns:
+            q_min = math_df['GAA'].min() 
+            q_max = math_df['GAA'].quantile(0.95) 
             if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
                 styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max, text_color_threshold=0.5)
 
