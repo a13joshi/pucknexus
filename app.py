@@ -154,7 +154,6 @@ calc_end_date = stats_end_date if stats_end_date else None
 s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
 g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
 
-# FIX: Rescue missing 'Team' and 'playerId' when pulling Custom Date Ranges (NHL API drops them on aggregates)
 if timeframe != "Full Season":
     s_base = load_skaters(calc_season, None, None)
     if not s_df_global.empty and not s_base.empty:
@@ -168,42 +167,43 @@ if timeframe != "Full Season":
         if missing_g:
             g_df_global = pd.merge(g_df_global, g_base[['Player'] + missing_g].drop_duplicates('Player'), on='Player', how='left')
 
-# --- THE FANTASY BASELINE ---
+# --- THE FANTASY BASELINE (TWO-PASS CALCULATION) ---
 min_gp = 5 if timeframe == "Full Season" else 1
 
+# GOALIE MATH
 if not g_df_global.empty:
-    g_df_math_pool = g_df_global[g_df_global['GP'] >= (min_gp - 2)] # Goalies play less
-    evaluated_goalies = calculate_z_scores(g_df_math_pool, {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
-    if 'Total Z' in evaluated_goalies.columns:
+    g_df_math_pool = g_df_global[g_df_global['GP'] >= (min_gp - 2)] 
+    g_pass_1 = calculate_z_scores(g_df_math_pool, {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
+    if 'Total Z' in g_pass_1.columns:
+        # Pass 2: Re-center mean on top 40 Goalies
+        top_g = g_pass_1.nlargest(40, 'Total Z')['Player'].tolist()
+        evaluated_goalies = calculate_z_scores(g_df_math_pool[g_df_math_pool['Player'].isin(top_g)], {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
         evaluated_goalies = evaluated_goalies.rename(columns={'Total Z': 'NexusScore'})
-    evaluated_goalies['match_key'] = evaluated_goalies['Player'].str.lower().str.strip()
-    
-    # Final safety rescue
-    restore_g = [c for c in ['playerId', 'Team'] if c not in evaluated_goalies.columns and c in g_df_global.columns]
-    if restore_g:
-        evaluated_goalies = pd.merge(evaluated_goalies, g_df_global[['Player'] + restore_g].drop_duplicates(subset=['Player']), on='Player', how='left')
-else:
-    evaluated_goalies = pd.DataFrame()
+        evaluated_goalies['match_key'] = evaluated_goalies['Player'].str.lower().str.strip()
+        restore_g = [c for c in ['playerId', 'Team'] if c not in evaluated_goalies.columns and c in g_df_global.columns]
+        if restore_g: evaluated_goalies = pd.merge(evaluated_goalies, g_df_global[['Player'] + restore_g].drop_duplicates(subset=['Player']), on='Player', how='left')
+    else: evaluated_goalies = pd.DataFrame()
+else: evaluated_goalies = pd.DataFrame()
 
+# SKATER MATH
 if not s_df_global.empty:
     s_df_math_pool = s_df_global[s_df_global['GP'] >= min_gp]
-    evaluated_df = calculate_z_scores(s_df_math_pool, weights)
+    s_pass_1 = calculate_z_scores(s_df_math_pool, weights)
     
-    if 'Total Z' in evaluated_df.columns:
+    if 'Total Z' in s_pass_1.columns:
+        # Pass 2: Re-center mean on top 300 Fantasy Skaters (forces 0 to be the true median rostered player)
+        top_s = s_pass_1.nlargest(300, 'Total Z')['Player'].tolist()
+        evaluated_df = calculate_z_scores(s_df_math_pool[s_df_math_pool['Player'].isin(top_s)], weights)
         evaluated_df = evaluated_df.rename(columns={'Total Z': 'NexusScore'})
         evaluated_df['match_key'] = evaluated_df['Player'].str.lower().str.strip()
         
-        # Final safety rescue
         restore_s = [c for c in ['playerId', 'Team'] if c not in evaluated_df.columns and c in s_df_global.columns]
-        if restore_s:
-            evaluated_df = pd.merge(evaluated_df, s_df_global[['Player'] + restore_s].drop_duplicates(subset=['Player']), on='Player', how='left')
+        if restore_s: evaluated_df = pd.merge(evaluated_df, s_df_global[['Player'] + restore_s].drop_duplicates(subset=['Player']), on='Player', how='left')
     else:
         st.error("Error: 'Total Z' column not generated. Check monster_math.py.")
         st.stop()
-else:
-    evaluated_df = pd.DataFrame()
+else: evaluated_df = pd.DataFrame()
 
-# Safety stop for the UI
 if evaluated_df.empty:
     st.error("No skater data available. Please check your NHL API connection.")
     st.stop()
@@ -222,10 +222,18 @@ with tab1:
     final = evaluated_df.copy()
     
     if not final.empty:
+        # --- THE VORP FIX: COMPARE TO REPLACEMENT LEVEL ---
         baselines = {}
         for pos in ['C', 'L', 'R', 'D']:
             pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
-            baselines[pos] = pos_players.head(12)['NexusScore'].mean() if len(pos_players) > 0 else 0
+            # Find the waiver-wire cutoff player (e.g., the 36th best Center)
+            rep_idx = 48 if pos == 'D' else 36
+            if len(pos_players) > rep_idx:
+                baselines[pos] = pos_players.iloc[rep_idx]['NexusScore']
+            elif len(pos_players) > 0:
+                baselines[pos] = pos_players.iloc[-1]['NexusScore']
+            else:
+                baselines[pos] = 0
         
         def calculate_vorp(row):
             if pd.isna(row['Pos']): return 0.0
@@ -243,8 +251,7 @@ with tab1:
             y_data['match_key'] = y_data['name'].str.lower().str.strip()
             
             actual_teams = y_data['Fantasy_Team'].nunique()
-            if actual_teams > 0:
-                num_teams = actual_teams
+            if actual_teams > 0: num_teams = actual_teams
             
             own_map = y_data[['match_key', 'Status', 'Is_Mine']].drop_duplicates('match_key')
             
@@ -275,14 +282,12 @@ with tab1:
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
         display_df = final.copy()
-        if 'Team' in display_df.columns:
-            display_df = display_df.rename(columns={'Team': 'NHL Team'})
+        if 'Team' in display_df.columns: display_df = display_df.rename(columns={'Team': 'NHL Team'})
 
-        # ADD NUMERICAL RANK
         display_df['Rank'] = range(1, len(display_df) + 1)
 
-        # EXACT REQUESTED ORDER: Pic -> Logo -> Team -> Own -> Rank -> Player -> ...
-        cols_order = ['Headshot', 'Logo', 'NHL Team', 'Own', 'Rank', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
+        # EXACT ORDER REQUESTED: Own -> Rank -> Pic -> Logo -> Team
+        cols_order = ['Own', 'Rank', 'Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
         
         heatmap_cols = ['NexusScore'] + [c for c in cats if c in display_df.columns]
@@ -292,13 +297,12 @@ with tab1:
             if val == 'Taken': return 'background-color: rgba(255, 255, 255, 0.2); color: transparent;'
             return 'color: transparent;' 
 
-        # STRIPPED HEADERS & SQUARING: Using invisible spaces (" ", "  ", "   ") to blank out headers cleanly
         cfg = {
+            "Own": st.column_config.TextColumn("  ", width="small"), 
+            "Rank": st.column_config.NumberColumn("Rnk", width="small"),
             "Headshot": st.column_config.ImageColumn("", width="small"),
             "Logo": st.column_config.ImageColumn(" ", width="small"), 
             "NHL Team": st.column_config.TextColumn("Team", width="small"),
-            "Own": st.column_config.TextColumn("  ", width="small"), 
-            "Rank": st.column_config.NumberColumn("Rnk", width="small"),
             "Player": st.column_config.TextColumn("Player", width="medium"), 
             "Pos": st.column_config.TextColumn("Pos", width="small"),
             "VORP": st.column_config.ProgressColumn("Scarcity", format="%.2f", min_value=-2.0, max_value=4.0, width="small"), 
@@ -307,7 +311,6 @@ with tab1:
         }
         for c in cats: cfg[c] = st.column_config.NumberColumn(c, width="small")
 
-        # --- SEPARATORS & HIGH-END COLOR DIFFERENTIATION ---
         styled_table = display_df[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore']).map(color_own, subset=['Own'])
         
         def round_separators(row):
@@ -319,8 +322,6 @@ with tab1:
         
         for c in heatmap_cols:
             if c in display_df.columns:
-                # FIX: Keep the floor at 5% to stop the "Sea of Red", but stretch the ceiling
-                # to the ABSOLUTE MAX. This forces 42 to be distinct from 29!
                 q_min = display_df[c].quantile(0.05) 
                 q_max = display_df[c].max() 
                 styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max)
