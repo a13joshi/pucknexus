@@ -36,15 +36,14 @@ st.set_page_config(page_title="PuckNexus", layout="wide")
 
 st.markdown("""
 <style>
-    /* Light Theme Optimized CSS */
+    .stApp { background-color: #0e1117; }
     h1 { font-family: 'Helvetica Neue', sans-serif; text-transform: uppercase; font-weight: 900; letter-spacing: 2px; background: -webkit-linear-gradient(45deg, #FF4B4B, #FF914D); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    div[data-testid="stMetric"] { background-color: #FFFFFF; padding: 20px; border-radius: 10px; border-left: 5px solid #FF4B4B; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    div[data-testid="stMetric"] { background-color: #1c1f26; padding: 20px; border-radius: 10px; border-left: 5px solid #FF4B4B; }
     
     .stAlert {
         border: none;
-        background-color: #FFFFFF;
-        color: #111111;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        background-color: #1c1f26;
+        color: white;
     }
     
     [data-testid="stMetricValue"] {
@@ -289,7 +288,7 @@ with tab1:
             final['Own'] = "FA" 
 
         st.markdown("### 🎯 Unified Player Value Dashboard")
-        st.caption(f"Players are sorted by their **NexusScore**. Color Key: 🟩 = Your Roster | ⬜ = Taken | Blank = Free Agent. (Separator lines every {num_teams} players).")
+        st.caption(f"Players are sorted by their **NexusScore**. Color Key: 🟩 = Your Roster | ⬛ = Taken | Blank = Free Agent. (Separator lines every {num_teams} players).")
 
         col_f, col_s = st.columns([3, 1])
         with col_f:
@@ -314,30 +313,34 @@ with tab1:
             if col in display_df.columns:
                 display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
 
-        # Updated Taken color to be a soft grey so it reads beautifully on the light background
-        def color_own(val):
-            if val == 'Mine': return 'background-color: rgba(0, 204, 150, 0.4); color: transparent;'
-            if val == 'Taken': return 'background-color: rgba(0, 0, 0, 0.15); color: transparent;'
-            return 'color: transparent;' 
+        # --- THE FIX: BRIGHT TABLE & INVISIBLE "NONE" ---
+        def base_style(val):
+            # If the cell is empty, make the background bright grey and the text TRANSPARENT
+            if pd.isna(val):
+                return 'background-color: #f4f6f9; color: transparent;'
+            # If it has a value, make the background bright grey and text BLACK
+            return 'background-color: #f4f6f9; color: #111111;'
+            
+        styled_table = display_df[actual_cols].style.map(base_style)
 
-        # --- FIX 1: THE LAMBDA FORMATTERS ---
-        # This explicitly transforms any NaN into a pure, invisible text string before Streamlit can add "None"
-        def clean_na(val, fmt):
-            if pd.isna(val): return ""
-            return fmt.format(val)
+        def color_own(val):
+            if val == 'Mine': return 'background-color: #00CC96; color: transparent;'
+            if val == 'Taken': return 'background-color: #555555; color: transparent;'
+            return 'background-color: #f4f6f9; color: transparent;' 
+        styled_table = styled_table.map(color_own, subset=['Own'])
 
         fmt_dict = {
-            'NexusScore': lambda x: clean_na(x, "{:.2f}"),
-            'GP': lambda x: clean_na(x, "{:.0f}"),
-            'GAA': lambda x: clean_na(x, "{:.2f}"),
-            'SV%': lambda x: clean_na(x, "{:.3f}"),
-            'W': lambda x: clean_na(x, "{:.0f}"),
-            'SHO': lambda x: clean_na(x, "{:.0f}")
+            'NexusScore': "{:.2f}",
+            'GP': "{:.0f}",
+            'GAA': "{:.2f}",
+            'SV%': "{:.3f}",
+            'W': "{:.0f}",
+            'SHO': "{:.0f}"
         }
-        for c in cats: fmt_dict[c] = lambda x: clean_na(x, "{:.0f}")
+        for c in cats: fmt_dict[c] = "{:.0f}"
+        
+        styled_table = styled_table.format(formatter=fmt_dict)
 
-        # --- FIX 2: DOWNGRADE TO GENERIC COLUMNS ---
-        # We removed NumberColumn from everything except Rank to stop Streamlit from enforcing numeric text!
         cfg = {
             "Own": st.column_config.Column("", width=30), 
             "Rank": st.column_config.NumberColumn("Rnk", width=40),
@@ -356,8 +359,6 @@ with tab1:
         }
         for c in cats: cfg[c] = st.column_config.Column(c, width=55) 
 
-        styled_table = display_df[actual_cols].style.format(formatter=fmt_dict).map(color_own, subset=['Own'])
-        
         def round_separators(row):
             if row['Rank'] % num_teams == 0:
                 return ['border-bottom: 2px solid #FF914D;' for _ in row]
@@ -371,13 +372,14 @@ with tab1:
                 q_min = display_df[c].quantile(0.05) 
                 q_max = display_df[c].max() 
                 if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
-                    styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max)
+                    # text_color_threshold forces text to flip to white/black depending on how dark the cell color is!
+                    styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max, text_color_threshold=0.5)
 
         if 'GAA' in display_df.columns:
             q_min = display_df['GAA'].min() 
             q_max = display_df['GAA'].quantile(0.95) 
             if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
-                styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max)
+                styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max, text_color_threshold=0.5)
 
         st.dataframe(
             styled_table,
