@@ -296,16 +296,21 @@ with tab1:
         }
         for c in cats: cfg[c] = st.column_config.NumberColumn(c, width="small")
 
-        # --- THE FIX: SMART OUTLIER COLOR SCALING ---
+        # --- THE FIX: SMART MEAN-CENTERED COLOR SCALING ---
         # 1. Build the base styler and apply the ownership colors
         styled_table = display_df[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore']).map(color_own, subset=['Own'])
         
-        # 2. Loop through the stat columns and apply the color gradient individually using percentiles
+        # 2. Loop through the stat columns and apply the Mean-Centered gradient
         for c in heatmap_cols:
             if c in display_df.columns:
-                q_min = display_df[c].quantile(0.05) # Bottom 5% forms the floor (Max Red)
-                q_max = display_df[c].quantile(0.85) # Top 15% forms the ceiling (Max Green)
-                styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max)
+                mean_val = display_df[c].mean()
+                std_val = max(display_df[c].std(), 0.1) # Safety catch to prevent divide-by-zero
+                
+                # Lock 'yellow' to the exact average. Cap green/red at 2 standard deviations.
+                v_min = mean_val - (2.0 * std_val)
+                v_max = mean_val + (2.0 * std_val)
+                
+                styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=v_min, vmax=v_max)
 
         st.dataframe(
             styled_table,
