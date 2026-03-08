@@ -209,25 +209,37 @@ if evaluated_df.empty:
     st.stop()
 
 # --- UI LAYOUT ---
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab1, tab2, tab3, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "📊 DASHBOARD", "📅 SCHEDULE", "⚖️ WAR ROOM", 
     "🥅 GOALIES", "📈 TRENDS", "🦅 WIRE HAWK", 
     "🏆 POWER RANKINGS", "⚔️ MATCHUP", "🔮 PLAYOFF PRIMER"
 ])
 
 # =========================================
-# TAB 1: DASHBOARD (Positional Scarcity Edition)
+# TAB 1: DASHBOARD (The God-Board Edition)
 # =========================================
 with tab1:
-    final = evaluated_df.copy()
+    # --- COMBINE SKATERS AND GOALIES ---
+    if not evaluated_df.empty and not evaluated_goalies.empty:
+        final = pd.concat([evaluated_df, evaluated_goalies], ignore_index=True)
+    elif not evaluated_df.empty:
+        final = evaluated_df.copy()
+    elif not evaluated_goalies.empty:
+        final = evaluated_goalies.copy()
+    else:
+        final = pd.DataFrame()
     
     if not final.empty:
-        # --- THE VORP FIX: COMPARE TO REPLACEMENT LEVEL ---
+        # --- THE VORP FIX: COMPARE TO POSITIONAL REPLACEMENT LEVEL ---
         baselines = {}
-        for pos in ['C', 'L', 'R', 'D']:
+        for pos in ['C', 'L', 'R', 'D', 'G']:
             pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
-            # Find the waiver-wire cutoff player (e.g., the 36th best Center)
-            rep_idx = 48 if pos == 'D' else 36
+            
+            # Identify the waiver-wire cutoff for each position
+            if pos == 'D': rep_idx = 48
+            elif pos == 'G': rep_idx = 24 # Baseline set for 12-team leagues (2 goalies per team)
+            else: rep_idx = 36
+            
             if len(pos_players) > rep_idx:
                 baselines[pos] = pos_players.iloc[rep_idx]['NexusScore']
             elif len(pos_players) > 0:
@@ -268,12 +280,13 @@ with tab1:
         except Exception:
             final['Own'] = "FA" 
 
-        st.markdown("### 🎯 Player Value Dashboard")
+        st.markdown("### 🎯 Unified Player Value Dashboard")
         st.caption(f"Players are sorted by their **NexusScore**. Color Key: 🟩 = Your Roster | ⬜ = Taken | Blank = Free Agent. (Separator lines every {num_teams} players).")
 
         col_f, col_s = st.columns([3, 1])
         with col_f:
-            selected_pos = st.multiselect("Filter Position", ['C', 'L', 'R', 'D'], default=['C', 'L', 'R', 'D'], key="dash_pos")
+            # Added 'G' to the position filter
+            selected_pos = st.multiselect("Filter Position", ['C', 'L', 'R', 'D', 'G'], default=['C', 'L', 'R', 'D', 'G'], key="dash_pos")
         
         final = final[final['Pos'].isin(selected_pos)] if 'Pos' in final.columns else final
         final = final.sort_values(by="NexusScore", ascending=False)
@@ -286,11 +299,10 @@ with tab1:
 
         display_df['Rank'] = range(1, len(display_df) + 1)
 
-        # EXACT ORDER REQUESTED: Own -> Rank -> Pic -> Logo -> Team
-        cols_order = ['Own', 'Rank', 'Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
+        # EXACT ORDER REQUESTED: Appended Goalie Stats to the end
+        g_cats = ['W', 'GAA', 'SV%', 'SHO']
+        cols_order = ['Own', 'Rank', 'Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
-        
-        heatmap_cols = ['NexusScore'] + [c for c in cats if c in display_df.columns]
 
         def color_own(val):
             if val == 'Mine': return 'background-color: rgba(0, 204, 150, 0.4); color: transparent;'
@@ -307,7 +319,12 @@ with tab1:
             "Pos": st.column_config.TextColumn("Pos", width="small"),
             "VORP": st.column_config.ProgressColumn("Scarcity", format="%.2f", min_value=-2.0, max_value=4.0, width="small"), 
             "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
-            "GP": st.column_config.NumberColumn("GP", width="small")
+            "GP": st.column_config.NumberColumn("GP", width="small"),
+            # Goalie configs (Decimals for GAA/SV%)
+            "W": st.column_config.NumberColumn("W", width="small"),
+            "GAA": st.column_config.NumberColumn("GAA", format="%.3f", width="small"),
+            "SV%": st.column_config.NumberColumn("SV%", format="%.3f", width="small"),
+            "SHO": st.column_config.NumberColumn("SHO", width="small")
         }
         for c in cats: cfg[c] = st.column_config.NumberColumn(c, width="small")
 
@@ -320,11 +337,23 @@ with tab1:
             
         styled_table = styled_table.apply(round_separators, axis=1)
         
-        for c in heatmap_cols:
+        # --- SMART HEATMAP LOGIC ---
+        # 1. Standard "Higher is Better" categories
+        normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
+        for c in normal_heatmaps:
             if c in display_df.columns:
                 q_min = display_df[c].quantile(0.05) 
                 q_max = display_df[c].max() 
-                styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max)
+                if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
+                    styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max)
+
+        # 2. Inverted "Lower is Better" category for GAA
+        if 'GAA' in display_df.columns:
+            # We use RdYlGn_r (reversed) so low GAA is Green and high GAA is Red
+            q_min = display_df['GAA'].min() 
+            q_max = display_df['GAA'].quantile(0.95) 
+            if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
+                styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max)
 
         st.dataframe(
             styled_table,
@@ -334,7 +363,7 @@ with tab1:
             use_container_width=False 
         )
     else:
-        st.error("No skater data found in global calculation.")
+        st.error("No player data found in global calculation.")
 
 # =========================================
 # TAB 2: SCHEDULE
@@ -504,45 +533,6 @@ with tab3:
 
     else:
         st.warning("No data available for player comparison.")
-
-# =========================================
-# TAB 4: GOALIES
-# =========================================
-with tab4:
-    # Pass the end date here to make sure custom calendar ranges work for goalies too
-    g_df = load_goalies(calc_season, calc_start_date, calc_end_date)
-    
-    if not g_df.empty:
-        r_g = calculate_z_scores(g_df, {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
-        
-        if 'Team' in r_g.columns: r_g['Logo'] = r_g['Team'].apply(get_team_logo)
-        if 'playerId' in r_g.columns: r_g['Headshot'] = r_g.apply(get_headshot, axis=1)
-        
-        # Rebrand to NexusScore
-        if 'Total Z' in r_g.columns: 
-            r_g = r_g.rename(columns={'Total Z': 'NexusScore'})
-            
-        # Safely check which columns actually exist before trying to display them
-        cols_order = ['Headshot', 'Logo', 'Player', 'Team', 'NexusScore', 'GP', 'W', 'GAA', 'SV%', 'SHO']
-        actual_cols = [c for c in cols_order if c in r_g.columns]
-        
-        g_heatmap = ['NexusScore', 'W', 'GAA', 'SV%', 'SHO']
-        actual_heatmap = [c for c in g_heatmap if c in r_g.columns]
-        
-        st.dataframe(
-            r_g[actual_cols].style.format({
-                "NexusScore": "{:.2f}", "W": "{:.0f}", "GAA": "{:.3f}", 
-                "SV%": "{:.3f}", "SHO": "{:.0f}", "GP": "{:.0f}"
-            }).background_gradient(cmap="RdYlGn", subset=actual_heatmap),
-            column_config={
-                "Headshot": st.column_config.ImageColumn("Img", width="small"),
-                "Logo": st.column_config.ImageColumn("Team", width="small"),
-                "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f")
-            },
-            height=600, use_container_width=True, hide_index=True 
-        )
-    else:
-        st.warning("No goalie data found.")
 
 # =========================================
 # TAB 5: TRENDS
