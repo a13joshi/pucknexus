@@ -217,6 +217,10 @@ tab1, tab2, tab3, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 # =========================================
 with tab1:
     # --- COMBINE SKATERS AND GOALIES ---
+    # FIX 1: Ensure goalies actually have a 'G' in their position column before merging so they don't get filtered out!
+    if not evaluated_goalies.empty and 'Pos' not in evaluated_goalies.columns:
+        evaluated_goalies['Pos'] = 'G'
+
     if not evaluated_df.empty and not evaluated_goalies.empty:
         final = pd.concat([evaluated_df, evaluated_goalies], ignore_index=True)
     elif not evaluated_df.empty:
@@ -227,14 +231,12 @@ with tab1:
         final = pd.DataFrame()
     
     if not final.empty:
-        # --- THE VORP FIX: COMPARE TO POSITIONAL REPLACEMENT LEVEL ---
         baselines = {}
         for pos in ['C', 'L', 'R', 'D', 'G']:
             pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
             
-            # Identify the waiver-wire cutoff for each position
             if pos == 'D': rep_idx = 48
-            elif pos == 'G': rep_idx = 24 # Baseline set for 12-team leagues (2 goalies per team)
+            elif pos == 'G': rep_idx = 24 
             else: rep_idx = 36
             
             if len(pos_players) > rep_idx:
@@ -253,7 +255,6 @@ with tab1:
 
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
-        # --- YAHOO OWNERSHIP & LEAGUE SIZE INTEGRATION ---
         num_teams = 12 
         try:
             y_data = pd.read_csv("yahoo_export.csv")
@@ -282,7 +283,6 @@ with tab1:
 
         col_f, col_s = st.columns([3, 1])
         with col_f:
-            # Added 'G' to the position filter
             selected_pos = st.multiselect("Filter Position", ['C', 'L', 'R', 'D', 'G'], default=['C', 'L', 'R', 'D', 'G'], key="dash_pos")
         
         final = final[final['Pos'].isin(selected_pos)] if 'Pos' in final.columns else final
@@ -296,15 +296,31 @@ with tab1:
 
         display_df['Rank'] = range(1, len(display_df) + 1)
 
-        # EXACT ORDER REQUESTED: Appended Goalie Stats to the end
         g_cats = ['W', 'GAA', 'SV%', 'SHO']
         cols_order = ['Own', 'Rank', 'Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
+
+        # FIX 2: Force all stats to be strictly numeric so we can clean up the "None" strings
+        for col in ['GP'] + cats + g_cats:
+            if col in display_df.columns:
+                display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
 
         def color_own(val):
             if val == 'Mine': return 'background-color: rgba(0, 204, 150, 0.4); color: transparent;'
             if val == 'Taken': return 'background-color: rgba(255, 255, 255, 0.2); color: transparent;'
             return 'color: transparent;' 
+
+        # FIX 3: Define a strict text formatter to kill decimals and replace NaN with blanks ("")
+        fmt_dict = {
+            'VORP': "{:.2f}",
+            'NexusScore': "{:.2f}",
+            'GP': "{:.0f}",
+            'GAA': "{:.3f}",
+            'SV%': "{:.3f}",
+            'W': "{:.0f}",
+            'SHO': "{:.0f}"
+        }
+        for c in cats: fmt_dict[c] = "{:.0f}"
 
         cfg = {
             "Own": st.column_config.TextColumn("  ", width="small"), 
@@ -316,16 +332,16 @@ with tab1:
             "Pos": st.column_config.TextColumn("Pos", width="small"),
             "VORP": st.column_config.ProgressColumn("Scarcity", format="%.2f", min_value=-2.0, max_value=4.0, width="small"), 
             "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
-            "GP": st.column_config.NumberColumn("GP", width="small"),
-            # Goalie configs (Decimals for GAA/SV%)
-            "W": st.column_config.NumberColumn("W", width="small"),
+            "GP": st.column_config.NumberColumn("GP", format="%.0f", width="small"),
+            "W": st.column_config.NumberColumn("W", format="%.0f", width="small"),
             "GAA": st.column_config.NumberColumn("GAA", format="%.3f", width="small"),
             "SV%": st.column_config.NumberColumn("SV%", format="%.3f", width="small"),
-            "SHO": st.column_config.NumberColumn("SHO", width="small")
+            "SHO": st.column_config.NumberColumn("SHO", format="%.0f", width="small")
         }
-        for c in cats: cfg[c] = st.column_config.NumberColumn(c, width="small")
+        for c in cats: cfg[c] = st.column_config.NumberColumn(c, format="%.0f", width="small")
 
-        styled_table = display_df[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore']).map(color_own, subset=['Own'])
+        # Apply the na_rep="" formatter to hide the empty cells
+        styled_table = display_df[actual_cols].style.format(formatter=fmt_dict, na_rep="").map(color_own, subset=['Own'])
         
         def round_separators(row):
             if row['Rank'] % num_teams == 0:
@@ -334,8 +350,6 @@ with tab1:
             
         styled_table = styled_table.apply(round_separators, axis=1)
         
-        # --- SMART HEATMAP LOGIC ---
-        # 1. Standard "Higher is Better" categories
         normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
         for c in normal_heatmaps:
             if c in display_df.columns:
@@ -344,9 +358,7 @@ with tab1:
                 if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
                     styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max)
 
-        # 2. Inverted "Lower is Better" category for GAA
         if 'GAA' in display_df.columns:
-            # We use RdYlGn_r (reversed) so low GAA is Green and high GAA is Red
             q_min = display_df['GAA'].min() 
             q_max = display_df['GAA'].quantile(0.95) 
             if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
