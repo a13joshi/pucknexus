@@ -313,39 +313,45 @@ with tab1:
             if col in display_df.columns:
                 display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
 
-        # --- THE FIX: DARK MODE UI ANCHORS ---
+        # --- THE FIX: ADVANCED COLOR MAPPING ---
+        # 1. Base Stats (Right Side)
         def base_style(val):
-            # If the cell is empty (NaN), make it the secondary dark grey and TRANSPARENT text
-            if pd.isna(val):
-                return 'background-color: #1c1f26; color: transparent;'
-            # For standard text columns, use the deep dark background and WHITE text
+            if pd.isna(val): return 'background-color: #1c1f26; color: transparent;'
             return 'background-color: #0e1117; color: #ffffff;'
-            
         styled_table = display_df[actual_cols].style.map(base_style)
 
-        # Your brilliant idea: Force the GP column to match the empty cells for visual offsetting!
+        # 2. Player Info (Left Side) - Slightly lighter dark shade!
+        left_side_cols = ['Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos']
+        def style_left(val):
+            return 'background-color: #161a24; color: #ffffff;'
+        styled_table = styled_table.map(style_left, subset=[c for c in left_side_cols if c in actual_cols])
+
+        # 3. GP Anchor
         def style_gp(val):
             if pd.isna(val): return 'background-color: #1c1f26; color: transparent;'
             return 'background-color: #1c1f26; color: #ffffff; font-weight: bold;'
         styled_table = styled_table.map(style_gp, subset=['GP'])
 
+        # 4. Ownership Blocks
         def color_own(val):
             if val == 'Mine': return 'background-color: #00CC96; color: transparent;'
             if val == 'Taken': return 'background-color: #333333; color: transparent;'
-            return 'background-color: #0e1117; color: transparent;' 
+            return 'background-color: #161a24; color: transparent;' # Matches the new left-side color
         styled_table = styled_table.map(color_own, subset=['Own'])
 
+        def clean_na(val, fmt):
+            if pd.isna(val): return ""
+            return fmt.format(val)
+
         fmt_dict = {
-            'NexusScore': "{:.2f}",
-            'GP': "{:.0f}",
-            'GAA': "{:.2f}",
-            'SV%': "{:.3f}",
-            'W': "{:.0f}",
-            'SHO': "{:.0f}"
+            'NexusScore': lambda x: clean_na(x, "{:.2f}"),
+            'GP': lambda x: clean_na(x, "{:.0f}"),
+            'GAA': lambda x: clean_na(x, "{:.2f}"),
+            'SV%': lambda x: clean_na(x, "{:.3f}"),
+            'W': lambda x: clean_na(x, "{:.0f}"),
+            'SHO': lambda x: clean_na(x, "{:.0f}")
         }
-        for c in cats: fmt_dict[c] = "{:.0f}"
-        
-        styled_table = styled_table.format(formatter=fmt_dict)
+        for c in cats: fmt_dict[c] = lambda x: clean_na(x, "{:.0f}")
 
         cfg = {
             "Own": st.column_config.Column("", width=30), 
@@ -365,10 +371,22 @@ with tab1:
         }
         for c in cats: cfg[c] = st.column_config.Column(c, width=55) 
 
+        styled_table = styled_table.format(formatter=fmt_dict)
+        
+        # --- THE FIX: BULLETPROOF SEPARATORS ---
         def round_separators(row):
-            if row['Rank'] % num_teams == 0:
-                return ['border-bottom: 2px solid #FF914D;' for _ in row]
-            return ['' for _ in row]
+            styles = []
+            for col in row.index:
+                # Triggers every 12 rows (or whatever your Yahoo league size is)
+                if row['Rank'] % num_teams == 0:
+                    if col == 'Rank':
+                        # Make the Rank text neon orange to visually announce the break!
+                        styles.append('border-bottom: 2px solid #FF914D; color: #FF914D; font-weight: 900;')
+                    else:
+                        styles.append('border-bottom: 2px solid #FF914D;')
+                else:
+                    styles.append('')
+            return styles
             
         styled_table = styled_table.apply(round_separators, axis=1)
         
@@ -378,7 +396,6 @@ with tab1:
                 q_min = display_df[c].quantile(0.05) 
                 q_max = display_df[c].max() 
                 if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
-                    # text_color_threshold=0.5 intelligently flips the text to black or white depending on the heatmap shade!
                     styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max, text_color_threshold=0.5)
 
         if 'GAA' in display_df.columns:
