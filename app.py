@@ -273,17 +273,15 @@ with tab1:
         if 'Team' in display_df.columns:
             display_df = display_df.rename(columns={'Team': 'NHL Team'})
 
-        # EXACT ORDER
         cols_order = ['Own', 'Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
         
         heatmap_cols = ['NexusScore'] + [c for c in cats if c in display_df.columns]
 
-        # CELL COLORING FUNCTION
         def color_own(val):
             if val == 'Mine': return 'background-color: rgba(0, 204, 150, 0.4); color: transparent;'
             if val == 'Taken': return 'background-color: rgba(255, 255, 255, 0.2); color: transparent;'
-            return 'color: transparent;' # Free Agent
+            return 'color: transparent;' 
 
         cfg = {
             "Own": st.column_config.TextColumn("Own", width="small"),
@@ -298,11 +296,19 @@ with tab1:
         }
         for c in cats: cfg[c] = st.column_config.NumberColumn(c, width="small")
 
+        # --- THE FIX: SMART OUTLIER COLOR SCALING ---
+        # 1. Build the base styler and apply the ownership colors
+        styled_table = display_df[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore']).map(color_own, subset=['Own'])
+        
+        # 2. Loop through the stat columns and apply the color gradient individually using percentiles
+        for c in heatmap_cols:
+            if c in display_df.columns:
+                q_min = display_df[c].quantile(0.05) # Bottom 5% forms the floor (Max Red)
+                q_max = display_df[c].quantile(0.85) # Top 15% forms the ceiling (Max Green)
+                styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max)
+
         st.dataframe(
-            # FIX: Removed vmin/vmax so columns scale perfectly relative to themselves, AND applied cell background colors
-            display_df[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore'])
-                 .background_gradient(cmap="RdYlGn", subset=heatmap_cols)
-                 .map(color_own, subset=['Own']),
+            styled_table,
             height=800, 
             column_config=cfg,
             hide_index=True, 
