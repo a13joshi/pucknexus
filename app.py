@@ -236,10 +236,16 @@ with tab1:
 
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
-        # --- YAHOO OWNERSHIP INTEGRATION ---
+        # --- YAHOO OWNERSHIP & LEAGUE SIZE INTEGRATION ---
+        num_teams = 12 # Default fallback
         try:
             y_data = pd.read_csv("yahoo_export.csv")
             y_data['match_key'] = y_data['name'].str.lower().str.strip()
+            
+            # Dynamically count how many teams are in your specific league
+            actual_teams = y_data['Fantasy_Team'].nunique()
+            if actual_teams > 0:
+                num_teams = actual_teams
             
             own_map = y_data[['match_key', 'Status', 'Is_Mine']].drop_duplicates('match_key')
             
@@ -257,7 +263,7 @@ with tab1:
             final['Own'] = "FA" 
 
         st.markdown("### 🎯 Player Value Dashboard")
-        st.caption("Players are sorted by their **NexusScore**. Color Key: 🟩 = Your Roster | ⬜ = Taken | Blank = Free Agent.")
+        st.caption(f"Players are sorted by their **NexusScore**. Color Key: 🟩 = Your Roster | ⬜ = Taken | Blank = Free Agent. (Separator lines every {num_teams} players).")
 
         col_f, col_s = st.columns([3, 1])
         with col_f:
@@ -273,7 +279,10 @@ with tab1:
         if 'Team' in display_df.columns:
             display_df = display_df.rename(columns={'Team': 'NHL Team'})
 
-        cols_order = ['Own', 'Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
+        # --- THE FIX: ADD NUMERICAL RANK ---
+        display_df.insert(0, 'Rank', range(1, len(display_df) + 1))
+
+        cols_order = ['Rank', 'Own', 'Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
         
         heatmap_cols = ['NexusScore'] + [c for c in cats if c in display_df.columns]
@@ -284,6 +293,7 @@ with tab1:
             return 'color: transparent;' 
 
         cfg = {
+            "Rank": st.column_config.NumberColumn("Rnk", width="small"),
             "Own": st.column_config.TextColumn("Own", width="small"),
             "Headshot": st.column_config.ImageColumn("Pic", width="small"),
             "Logo": st.column_config.ImageColumn("", width="small"), 
@@ -296,26 +306,26 @@ with tab1:
         }
         for c in cats: cfg[c] = st.column_config.NumberColumn(c, width="small")
 
-        # --- THE FIX: TRUE SYMMETRICAL MEAN-CENTERING ---
-        # 1. Build the base styler and apply the ownership colors
+        # --- THE FIX: SEPARATORS & ASYMMETRICAL COLOR SCALING ---
         styled_table = display_df[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore']).map(color_own, subset=['Own'])
         
-        # 2. Loop through the stat columns and apply a perfectly balanced gradient
+        # 1. Apply Horizontal Separators by Round
+        def round_separators(row):
+            # If the rank divides perfectly by the number of teams, draw an orange bottom border
+            if row['Rank'] % num_teams == 0:
+                return ['border-bottom: 2px solid #FF914D;' for _ in row]
+            return ['' for _ in row]
+            
+        styled_table = styled_table.apply(round_separators, axis=1)
+        
+        # 2. Asymmetrical Heatmap (Restores the Red!)
         for c in heatmap_cols:
             if c in display_df.columns:
-                mean_val = display_df[c].mean()
-                max_val = display_df[c].max()
-                min_val = display_df[c].min()
-                
-                # Find the furthest outlier distance from the average
-                max_distance = max(mean_val - min_val, max_val - mean_val)
-                
-                # By forcing vmin and vmax to be equidistant from the mean, 
-                # Pandas is forced to lock "Yellow" to the exact average!
-                v_min = mean_val - max_distance
-                v_max = mean_val + max_distance
-                
-                styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=v_min, vmax=v_max)
+                # Bottom 10% gets max red, but only the top 2% gets max green. 
+                # This perfectly spreads the middle 88% into readable yellows/oranges!
+                q_min = display_df[c].quantile(0.10) 
+                q_max = display_df[c].quantile(0.98) 
+                styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max)
 
         st.dataframe(
             styled_table,
