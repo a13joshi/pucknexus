@@ -250,11 +250,9 @@ with tab1:
         baselines = {}
         for pos in ['C', 'L', 'R', 'D', 'G']:
             pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
-            
             if pos == 'D': rep_idx = 48
             elif pos == 'G': rep_idx = 24 
             else: rep_idx = 36
-            
             if len(pos_players) > rep_idx:
                 baselines[pos] = pos_players.iloc[rep_idx]['NexusScore']
             elif len(pos_players) > 0:
@@ -265,9 +263,7 @@ with tab1:
         def calculate_vorp(row):
             if pd.isna(row['Pos']): return 0.0
             primary_pos = str(row['Pos']).replace('/', ',').split(',')[0].strip()
-            if primary_pos in baselines:
-                return row['NexusScore'] - baselines[primary_pos]
-            return 0.0
+            return row['NexusScore'] - baselines.get(primary_pos, 0.0)
 
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
@@ -280,21 +276,18 @@ with tab1:
         try:
             y_data = pd.read_csv("yahoo_export.csv")
             y_data['match_key'] = y_data['name'].apply(clean_name)
-            
             actual_teams = y_data['Fantasy_Team'].nunique()
             if actual_teams > 0: num_teams = actual_teams
             own_map = y_data[['match_key', 'Status', 'Is_Mine']].drop_duplicates('match_key')
-            
             def determine_own(row):
                 if row.get('Is_Mine') == True: return "Mine"
                 if row.get('Status') == 'Rostered': return "Taken"
                 return "FA" 
-                
             own_map['Own'] = own_map.apply(determine_own, axis=1)
             final['match_key'] = final['Player'].apply(clean_name)
             final = pd.merge(final, own_map[['match_key', 'Own']], on='match_key', how='left')
             final['Own'] = final['Own'].fillna("FA")
-        except Exception:
+        except:
             final['Own'] = "FA" 
 
         st.markdown("### 🎯 Unified Player Value Dashboard")
@@ -310,46 +303,41 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # 1. THE "NONE" ASSASSIN: Fill NaNs with empty strings immediately
+        # 1. PREPARE THE DATA: Keep a numeric version for math and a string version for display
         display_df = final.copy()
         display_df['Rank'] = range(1, len(display_df) + 1)
-        display_df = display_df.fillna("") 
-
+        
         if 'Team' in display_df.columns: display_df = display_df.rename(columns={'Team': 'NHL Team'})
-
+        
         g_cats = ['W', 'GAA', 'SV%', 'SHO']
-        # 2. SWAP ORDER: NHL Team now comes before Logo
         cols_order = ['Own', 'Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
 
-        # 3. ADVANCED UI STYLING
+        # Use a copy to calculate gradients before we turn numbers into empty strings
+        math_df = display_df[actual_cols].copy()
+        for col in ['NexusScore', 'GP', 'VORP'] + cats + g_cats:
+            if col in math_df.columns:
+                math_df[col] = pd.to_numeric(math_df[col], errors='coerce')
+
+        # NOW fill with empty strings for the display layer
+        display_df = display_df.fillna("") 
+
+        # 2. STYLING LAYER
         def base_style(val):
-            # Empty strings (formerly None) get the anchor color and invisible text
-            if val == "": 
-                return 'background-color: #1c1f26; color: transparent; border: none;'
+            if val == "": return 'background-color: #1c1f26; color: transparent; border: none;'
             return 'background-color: #0e1117; color: #ffffff;'
             
         styled_table = display_df[actual_cols].style.map(base_style)
 
-        # 4. LIGHTER LEFT SIDE: Brighter steel-grey (#2A303C) for the profile section
+        # Left Side Contrast
         left_side_cols = ['Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos']
-        def style_left(val):
-            if val == "": return 'background-color: #1c1f26; color: transparent;'
-            return 'background-color: #2A303C; color: #ffffff;'
-        styled_table = styled_table.map(style_left, subset=[c for c in left_side_cols if c in actual_cols])
+        styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if x != "" else 'background-color: #1c1f26;', subset=[c for c in left_side_cols if c in actual_cols])
 
-        # 5. GP ANCHOR: Vertical divider matching the blank cell color
-        def style_gp(val):
-            if val == "": return 'background-color: #1c1f26; color: transparent;'
-            return 'background-color: #1c1f26; color: #ffffff; font-weight: bold;'
-        styled_table = styled_table.map(style_gp, subset=['GP'])
+        # GP Anchor & Own Colors
+        styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if x != "" else 'background-color: #1c1f26;', subset=['GP'])
+        styled_table = styled_table.map(lambda x: 'background-color: #00CC96; color: transparent;' if x == 'Mine' else ('background-color: #333333; color: transparent;' if x == 'Taken' else 'background-color: #2A303C;'), subset=['Own'])
 
-        def color_own(val):
-            if val == 'Mine': return 'background-color: #00CC96; color: transparent;'
-            if val == 'Taken': return 'background-color: #333333; color: transparent;'
-            return 'background-color: #2A303C; color: transparent;' 
-        styled_table = styled_table.map(color_own, subset=['Own'])
-
+        # 3. FORMATTING (Handles the conversion of numbers to display strings safely)
         def clean_na(val, fmt):
             if val == "": return ""
             try: return fmt.format(float(val))
@@ -357,6 +345,7 @@ with tab1:
 
         fmt_dict = {
             'NexusScore': lambda x: clean_na(x, "{:.2f}"),
+            'VORP': lambda x: clean_na(x, "{:.2f}"),
             'GP': lambda x: clean_na(x, "{:.0f}"),
             'GAA': lambda x: clean_na(x, "{:.2f}"),
             'SV%': lambda x: clean_na(x, "{:.3f}"),
@@ -364,9 +353,25 @@ with tab1:
             'SHO': lambda x: clean_na(x, "{:.0f}")
         }
         for c in cats: fmt_dict[c] = lambda x: clean_na(x, "{:.0f}")
-
         styled_table = styled_table.format(formatter=fmt_dict)
 
+        # 4. THE CRASH FIX: Apply Heatmaps using the pre-calculated math_df values
+        normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
+        for c in normal_heatmaps:
+            if c in math_df.columns:
+                q_min = math_df[c].quantile(0.05)
+                q_max = math_df[c].max()
+                if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
+                    # gmap=math_df[c] is the secret sauce that prevents the crash
+                    styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max, gmap=math_df[c], text_color_threshold=0.5)
+
+        if 'GAA' in math_df.columns:
+            q_min = math_df['GAA'].min()
+            q_max = math_df['GAA'].quantile(0.95)
+            if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
+                styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max, gmap=math_df['GAA'], text_color_threshold=0.5)
+
+        # 5. RENDER
         cfg = {
             "Own": st.column_config.Column("", width=30), 
             "Rank": st.column_config.NumberColumn("Rnk", width=40),
@@ -383,45 +388,11 @@ with tab1:
             "SV%": st.column_config.Column("SV%", width=65),
             "SHO": st.column_config.Column("SHO", width=60)
         }
-        for c in cats: cfg[c] = st.column_config.Column(c, width=65) 
+        for c in cats: cfg[c] = st.column_config.Column(c, width=65)
 
-        # 6. THICK SEPARATOR BAR: Slate-grey bar every 12 rows
-        def round_separators(row):
-            styles = []
-            for col in row.index:
-                if row['Rank'] % num_teams == 0:
-                    styles.append('border-bottom: 4px solid #556070 !important;')
-                else:
-                    styles.append('')
-            return styles
-        styled_table = styled_table.apply(round_separators, axis=1)
-        
-        # Heatmap gradients
-        # We must filter out empty strings for the quantile math
-        math_df = final.copy()
-        normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
-        for c in normal_heatmaps:
-            if c in math_df.columns:
-                q_min = math_df[c].quantile(0.05) 
-                q_max = math_df[c].max() 
-                if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
-                    styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max, text_color_threshold=0.5)
-
-        if 'GAA' in math_df.columns:
-            q_min = math_df['GAA'].min() 
-            q_max = math_df['GAA'].quantile(0.95) 
-            if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
-                styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max, text_color_threshold=0.5)
-
-        st.dataframe(
-            styled_table,
-            height=800, 
-            column_config=cfg,
-            hide_index=True, 
-            use_container_width=False 
-        )
+        st.dataframe(styled_table, height=800, column_config=cfg, hide_index=True, use_container_width=False)
     else:
-        st.error("No player data found in global calculation.")
+        st.error("No skater data found.")
 
 # =========================================
 # TAB 2: SCHEDULE
