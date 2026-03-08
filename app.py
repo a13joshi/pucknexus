@@ -170,14 +170,25 @@ if timeframe != "Full Season":
 # --- THE FANTASY BASELINE (TWO-PASS CALCULATION) ---
 min_gp = 5 if timeframe == "Full Season" else 1
 
+# Dynamically count how many active skater categories you are using
+active_cats = [c for c in cats if weights.get(c, 0) > 0]
+num_active_cats = max(len(active_cats), 1)
+
 # GOALIE MATH
 if not g_df_global.empty:
-    g_df_math_pool = g_df_global[g_df_global['GP'] >= (min_gp - 2)] 
+    # FIX: Strict Volume Filter for Goalies (Eliminates the Trent Miner outliers)
+    g_min_gp = 12 if timeframe == "Full Season" else 3 
+    g_df_math_pool = g_df_global[g_df_global['GP'] >= g_min_gp] 
+    
     g_pass_1 = calculate_z_scores(g_df_math_pool, {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
     if 'Total Z' in g_pass_1.columns:
-        # Pass 2: Re-center mean on top 40 Goalies
         top_g = g_pass_1.nlargest(40, 'Total Z')['Player'].tolist()
         evaluated_goalies = calculate_z_scores(g_df_math_pool[g_df_math_pool['Player'].isin(top_g)], {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
+        
+        # FIX: The Goalie Economy Multiplier! (Scales 4 categories up to match your 8 skater categories)
+        scale_factor = num_active_cats / 4.0
+        evaluated_goalies['Total Z'] = evaluated_goalies['Total Z'] * scale_factor
+        
         evaluated_goalies = evaluated_goalies.rename(columns={'Total Z': 'NexusScore'})
         evaluated_goalies['match_key'] = evaluated_goalies['Player'].str.lower().str.strip()
         restore_g = [c for c in ['playerId', 'Team'] if c not in evaluated_goalies.columns and c in g_df_global.columns]
@@ -191,7 +202,6 @@ if not s_df_global.empty:
     s_pass_1 = calculate_z_scores(s_df_math_pool, weights)
     
     if 'Total Z' in s_pass_1.columns:
-        # Pass 2: Re-center mean on top 300 Fantasy Skaters (forces 0 to be the true median rostered player)
         top_s = s_pass_1.nlargest(300, 'Total Z')['Player'].tolist()
         evaluated_df = calculate_z_scores(s_df_math_pool[s_df_math_pool['Player'].isin(top_s)], weights)
         evaluated_df = evaluated_df.rename(columns={'Total Z': 'NexusScore'})
@@ -216,8 +226,6 @@ tab1, tab2, tab3, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 # TAB 1: DASHBOARD (The God-Board Edition)
 # =========================================
 with tab1:
-    # --- COMBINE SKATERS AND GOALIES ---
-    # FIX 1: Ensure goalies actually have a 'G' in their position column before merging so they don't get filtered out!
     if not evaluated_goalies.empty and 'Pos' not in evaluated_goalies.columns:
         evaluated_goalies['Pos'] = 'G'
 
@@ -259,10 +267,8 @@ with tab1:
         try:
             y_data = pd.read_csv("yahoo_export.csv")
             y_data['match_key'] = y_data['name'].str.lower().str.strip()
-            
             actual_teams = y_data['Fantasy_Team'].nunique()
             if actual_teams > 0: num_teams = actual_teams
-            
             own_map = y_data[['match_key', 'Status', 'Is_Mine']].drop_duplicates('match_key')
             
             def determine_own(row):
@@ -271,7 +277,6 @@ with tab1:
                 return "FA" 
                 
             own_map['Own'] = own_map.apply(determine_own, axis=1)
-            
             final['match_key'] = final['Player'].str.lower().str.strip()
             final = pd.merge(final, own_map[['match_key', 'Own']], on='match_key', how='left')
             final['Own'] = final['Own'].fillna("FA")
@@ -300,8 +305,8 @@ with tab1:
         cols_order = ['Own', 'Rank', 'Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
 
-        # FIX 2: Force all stats to be strictly numeric so we can clean up the "None" strings
-        for col in ['GP'] + cats + g_cats:
+        # FIX: Force all numerical columns to strict Floats. This allows Streamlit to cleanly hide all NaNs as blanks!
+        for col in ['GP', 'VORP', 'NexusScore'] + cats + g_cats:
             if col in display_df.columns:
                 display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
 
@@ -310,18 +315,7 @@ with tab1:
             if val == 'Taken': return 'background-color: rgba(255, 255, 255, 0.2); color: transparent;'
             return 'color: transparent;' 
 
-        # FIX 3: Define a strict text formatter to kill decimals and replace NaN with blanks ("")
-        fmt_dict = {
-            'VORP': "{:.2f}",
-            'NexusScore': "{:.2f}",
-            'GP': "{:.0f}",
-            'GAA': "{:.3f}",
-            'SV%': "{:.3f}",
-            'W': "{:.0f}",
-            'SHO': "{:.0f}"
-        }
-        for c in cats: fmt_dict[c] = "{:.0f}"
-
+        # FIX: GAA set to %.2f, and we are letting Streamlit handle ALL formatting now.
         cfg = {
             "Own": st.column_config.TextColumn("  ", width="small"), 
             "Rank": st.column_config.NumberColumn("Rnk", width="small"),
@@ -334,14 +328,14 @@ with tab1:
             "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
             "GP": st.column_config.NumberColumn("GP", format="%.0f", width="small"),
             "W": st.column_config.NumberColumn("W", format="%.0f", width="small"),
-            "GAA": st.column_config.NumberColumn("GAA", format="%.3f", width="small"),
+            "GAA": st.column_config.NumberColumn("GAA", format="%.2f", width="small"),
             "SV%": st.column_config.NumberColumn("SV%", format="%.3f", width="small"),
             "SHO": st.column_config.NumberColumn("SHO", format="%.0f", width="small")
         }
         for c in cats: cfg[c] = st.column_config.NumberColumn(c, format="%.0f", width="small")
 
-        # Apply the na_rep="" formatter to hide the empty cells
-        styled_table = display_df[actual_cols].style.format(formatter=fmt_dict, na_rep="").map(color_own, subset=['Own'])
+        # FIX: Ripped out the `.style.format()` command. Streamlit will natively hide blanks perfectly.
+        styled_table = display_df[actual_cols].style.map(color_own, subset=['Own'])
         
         def round_separators(row):
             if row['Rank'] % num_teams == 0:
