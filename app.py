@@ -305,8 +305,8 @@ with tab1:
         cols_order = ['Own', 'Rank', 'Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
 
-        # FIX: Force all numerical columns to strict Floats. This allows Streamlit to cleanly hide all NaNs as blanks!
-        for col in ['GP', 'VORP', 'NexusScore'] + cats + g_cats:
+        # Ensure everything is strictly numeric so na_rep="" catches the empty cells perfectly
+        for col in ['GP'] + cats + g_cats:
             if col in display_df.columns:
                 display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
 
@@ -315,27 +315,38 @@ with tab1:
             if val == 'Taken': return 'background-color: rgba(255, 255, 255, 0.2); color: transparent;'
             return 'color: transparent;' 
 
-        # FIX: GAA set to %.2f, and we are letting Streamlit handle ALL formatting now.
+        # FIX 1: Exact Pixel Widths! 30px makes a perfect square. 35+45 tightly docks the Logo and Team.
         cfg = {
-            "Own": st.column_config.TextColumn("  ", width="small"), 
-            "Rank": st.column_config.NumberColumn("Rnk", width="small"),
-            "Headshot": st.column_config.ImageColumn("", width="small"),
-            "Logo": st.column_config.ImageColumn(" ", width="small"), 
-            "NHL Team": st.column_config.TextColumn("Team", width="small"),
-            "Player": st.column_config.TextColumn("Player", width="medium"), 
-            "Pos": st.column_config.TextColumn("Pos", width="small"),
-            "VORP": st.column_config.ProgressColumn("Scarcity", format="%.2f", min_value=-2.0, max_value=4.0, width="small"), 
-            "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
-            "GP": st.column_config.NumberColumn("GP", format="%.0f", width="small"),
-            "W": st.column_config.NumberColumn("W", format="%.0f", width="small"),
-            "GAA": st.column_config.NumberColumn("GAA", format="%.2f", width="small"),
-            "SV%": st.column_config.NumberColumn("SV%", format="%.3f", width="small"),
-            "SHO": st.column_config.NumberColumn("SHO", format="%.0f", width="small")
+            "Own": st.column_config.Column("", width=30), 
+            "Rank": st.column_config.NumberColumn("Rnk", width=40),
+            "Headshot": st.column_config.ImageColumn("", width=35),
+            "Logo": st.column_config.ImageColumn("", width=35), 
+            "NHL Team": st.column_config.Column("Team", width=45), 
+            "Player": st.column_config.Column("Player", width=150), 
+            "Pos": st.column_config.Column("Pos", width=40),
+            "VORP": st.column_config.ProgressColumn("Scarcity", format="%.2f", min_value=-2.0, max_value=4.0, width=70), 
+            "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width=60),
+            
+            # FIX 2: Bypassing NumberColumn so Streamlit doesn't override our invisible NaNs
+            "GP": st.column_config.Column("GP", width=35),
+            "W": st.column_config.Column("W", width=35),
+            "GAA": st.column_config.Column("GAA", width=45),
+            "SV%": st.column_config.Column("SV%", width=50),
+            "SHO": st.column_config.Column("SHO", width=35)
         }
-        for c in cats: cfg[c] = st.column_config.NumberColumn(c, format="%.0f", width="small")
+        for c in cats: cfg[c] = st.column_config.Column(c, width=35)
 
-        # FIX: Ripped out the `.style.format()` command. Streamlit will natively hide blanks perfectly.
-        styled_table = display_df[actual_cols].style.map(color_own, subset=['Own'])
+        # FIX 3: Revert to Pandas formatter. na_rep="" forces all missing stats to be completely blank!
+        fmt_dict = {
+            'GP': "{:.0f}",
+            'GAA': "{:.2f}",
+            'SV%': "{:.3f}",
+            'W': "{:.0f}",
+            'SHO': "{:.0f}"
+        }
+        for c in cats: fmt_dict[c] = "{:.0f}"
+
+        styled_table = display_df[actual_cols].style.format(formatter=fmt_dict, na_rep="").map(color_own, subset=['Own'])
         
         def round_separators(row):
             if row['Rank'] % num_teams == 0:
