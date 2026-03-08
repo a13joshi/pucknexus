@@ -313,20 +313,26 @@ with tab1:
             if col in display_df.columns:
                 display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
 
-        # --- THE FIX: BRIGHT TABLE & INVISIBLE "NONE" ---
+        # --- THE FIX: DARK MODE UI ANCHORS ---
         def base_style(val):
-            # If the cell is empty, make the background bright grey and the text TRANSPARENT
+            # If the cell is empty (NaN), make it the secondary dark grey and TRANSPARENT text
             if pd.isna(val):
-                return 'background-color: #f4f6f9; color: transparent;'
-            # If it has a value, make the background bright grey and text BLACK
-            return 'background-color: #f4f6f9; color: #111111;'
+                return 'background-color: #1c1f26; color: transparent;'
+            # For standard text columns, use the deep dark background and WHITE text
+            return 'background-color: #0e1117; color: #ffffff;'
             
         styled_table = display_df[actual_cols].style.map(base_style)
 
+        # Your brilliant idea: Force the GP column to match the empty cells for visual offsetting!
+        def style_gp(val):
+            if pd.isna(val): return 'background-color: #1c1f26; color: transparent;'
+            return 'background-color: #1c1f26; color: #ffffff; font-weight: bold;'
+        styled_table = styled_table.map(style_gp, subset=['GP'])
+
         def color_own(val):
             if val == 'Mine': return 'background-color: #00CC96; color: transparent;'
-            if val == 'Taken': return 'background-color: #555555; color: transparent;'
-            return 'background-color: #f4f6f9; color: transparent;' 
+            if val == 'Taken': return 'background-color: #333333; color: transparent;'
+            return 'background-color: #0e1117; color: transparent;' 
         styled_table = styled_table.map(color_own, subset=['Own'])
 
         fmt_dict = {
@@ -372,7 +378,7 @@ with tab1:
                 q_min = display_df[c].quantile(0.05) 
                 q_max = display_df[c].max() 
                 if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
-                    # text_color_threshold forces text to flip to white/black depending on how dark the cell color is!
+                    # text_color_threshold=0.5 intelligently flips the text to black or white depending on the heatmap shade!
                     styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max, text_color_threshold=0.5)
 
         if 'GAA' in display_df.columns:
