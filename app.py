@@ -236,7 +236,7 @@ with tab1:
 
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
-        # --- NEW: YAHOO OWNERSHIP INTEGRATION ---
+        # --- YAHOO OWNERSHIP INTEGRATION ---
         try:
             y_data = pd.read_csv("yahoo_export.csv")
             y_data['match_key'] = y_data['name'].str.lower().str.strip()
@@ -244,20 +244,20 @@ with tab1:
             own_map = y_data[['match_key', 'Status', 'Is_Mine']].drop_duplicates('match_key')
             
             def determine_own(row):
-                if row.get('Is_Mine') == True: return "🟢"
-                if row.get('Status') == 'Rostered': return "⚪"
-                return "" # Blank for Free Agents
+                if row.get('Is_Mine') == True: return "Mine"
+                if row.get('Status') == 'Rostered': return "Taken"
+                return "FA" 
                 
             own_map['Own'] = own_map.apply(determine_own, axis=1)
             
             final['match_key'] = final['Player'].str.lower().str.strip()
             final = pd.merge(final, own_map[['match_key', 'Own']], on='match_key', how='left')
-            final['Own'] = final['Own'].fillna("")
+            final['Own'] = final['Own'].fillna("FA")
         except Exception:
-            final['Own'] = "" # Failsafe if Yahoo isn't synced yet
+            final['Own'] = "FA" 
 
         st.markdown("### 🎯 Player Value Dashboard")
-        st.caption("Players are sorted by their **NexusScore**. 🟢 = Your Roster | ⚪ = Taken | Blank = Free Agent.")
+        st.caption("Players are sorted by their **NexusScore**. Color Key: 🟩 = Your Roster | ⬜ = Taken | Blank = Free Agent.")
 
         col_f, col_s = st.columns([3, 1])
         with col_f:
@@ -266,40 +266,43 @@ with tab1:
         final = final[final['Pos'].isin(selected_pos)] if 'Pos' in final.columns else final
         final = final.sort_values(by="NexusScore", ascending=False)
         
-        # Safe Image Generation
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # Break Streamlit's hidden layout cache
         display_df = final.copy()
         if 'Team' in display_df.columns:
             display_df = display_df.rename(columns={'Team': 'NHL Team'})
 
-        # EXACT REQUESTED ORDER: Own -> Pic -> Logo -> Team -> Player -> Pos -> Scarcity -> NexusScore -> GP
+        # EXACT ORDER
         cols_order = ['Own', 'Headshot', 'Logo', 'NHL Team', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
         
         heatmap_cols = ['NexusScore'] + [c for c in cats if c in display_df.columns]
 
+        # CELL COLORING FUNCTION
+        def color_own(val):
+            if val == 'Mine': return 'background-color: rgba(0, 204, 150, 0.4); color: transparent;'
+            if val == 'Taken': return 'background-color: rgba(255, 255, 255, 0.2); color: transparent;'
+            return 'color: transparent;' # Free Agent
+
         cfg = {
             "Own": st.column_config.TextColumn("Own", width="small"),
             "Headshot": st.column_config.ImageColumn("Pic", width="small"),
-            "Logo": st.column_config.ImageColumn("", width="small"), # Blank header to visually "merge" with Team
+            "Logo": st.column_config.ImageColumn("", width="small"), 
             "NHL Team": st.column_config.TextColumn("Team", width="small"),
             "Player": st.column_config.TextColumn("Player", width="medium"), 
             "Pos": st.column_config.TextColumn("Pos", width="small"),
-            "VORP": st.column_config.ProgressColumn("Scarcity", format="%.2f", min_value=-2.0, max_value=4.0, width="small"), # Progress Bar Restored!
+            "VORP": st.column_config.ProgressColumn("Scarcity", format="%.2f", min_value=-2.0, max_value=4.0, width="small"), 
             "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f", width="small"),
             "GP": st.column_config.NumberColumn("GP", width="small")
         }
-        
-        for c in cats:
-            cfg[c] = st.column_config.NumberColumn(c, width="small")
+        for c in cats: cfg[c] = st.column_config.NumberColumn(c, width="small")
 
         st.dataframe(
-            # FIX: Added vmin and vmax to lock the heatmap scale and stop the "Sea of Red"
+            # FIX: Removed vmin/vmax so columns scale perfectly relative to themselves, AND applied cell background colors
             display_df[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore'])
-                 .background_gradient(cmap="RdYlGn", subset=heatmap_cols, vmin=-2.5, vmax=2.5),
+                 .background_gradient(cmap="RdYlGn", subset=heatmap_cols)
+                 .map(color_own, subset=['Own']),
             height=800, 
             column_config=cfg,
             hide_index=True, 
@@ -572,12 +575,13 @@ with tab6:
         try:
             y_data = pd.read_csv(target_file)
             
-            # Create a safe working copy
             wire_df = final.copy()
             wire_df['match_key'] = wire_df['Player'].str.lower().str.strip()
             y_data['match_key'] = y_data['name'].str.lower().str.strip()
             
-            merged = pd.merge(y_data, wire_df, left_on='match_key', right_on='match_key', how='inner')
+            # FIX: Only bring in Yahoo columns that don't collide with NHL columns (Prevents Team_x / Team_y crash)
+            cols_to_use = [c for c in wire_df.columns if c not in y_data.columns or c == 'match_key']
+            merged = pd.merge(y_data, wire_df[cols_to_use], on='match_key', how='inner')
             merged = merged.drop_duplicates(subset=['match_key'])
             
             if 'Team' in merged.columns: merged['Logo'] = merged['Team'].apply(get_team_logo)
@@ -647,12 +651,14 @@ with tab6:
                 ros[ros_cols].style.format("{:.2f}", subset=['NexusScore'])
                              .background_gradient(cmap="RdYlGn", subset=heatmap_subset), 
                 column_config={
-                    "Logo": st.column_config.ImageColumn("Team", width="small"), 
-                    "Headshot": st.column_config.ImageColumn("Img", width="small"),
+                    "Logo": st.column_config.ImageColumn("", width="small"), 
+                    "Team": st.column_config.TextColumn("Team", width="small"),
+                    "name": st.column_config.TextColumn("Player", width="medium"),
+                    "Headshot": st.column_config.ImageColumn("Pic", width="small"),
                     "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f")
                 }, 
                 hide_index=True, 
-                use_container_width=False # FIX: Turned OFF to snap to text
+                use_container_width=False # Snaps columns tightly to text width
             )
             
             st.divider()
@@ -663,12 +669,14 @@ with tab6:
                 fa[fa_cols].style.format("{:.2f}", subset=['NexusScore'])
                            .background_gradient(cmap="RdYlGn", subset=heatmap_subset), 
                 column_config={
-                    "Logo": st.column_config.ImageColumn("Team", width="small"), 
-                    "Headshot": st.column_config.ImageColumn("Img", width="small"),
+                    "Logo": st.column_config.ImageColumn("", width="small"), 
+                    "Team": st.column_config.TextColumn("Team", width="small"),
+                    "name": st.column_config.TextColumn("Player", width="medium"),
+                    "Headshot": st.column_config.ImageColumn("Pic", width="small"),
                     "NexusScore": st.column_config.NumberColumn("NexusScore", format="%.2f")
                 }, 
                 hide_index=True, 
-                use_container_width=False # FIX: Turned OFF to snap to text
+                use_container_width=False 
             )
         except Exception as e: 
             st.info(f"Run 'Sync with Yahoo' to load data. System message: {e}")
