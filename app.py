@@ -303,7 +303,7 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # 1. PREPARE THE DATA: Keep a numeric version for math and a string version for display
+        # 1. DATA PREP: Keep a numeric version for math and a string version for display
         display_df = final.copy()
         display_df['Rank'] = range(1, len(display_df) + 1)
         
@@ -313,31 +313,31 @@ with tab1:
         cols_order = ['Own', 'Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
 
-        # Use a copy to calculate gradients before we turn numbers into empty strings
+        # Create numeric-only gmap for color calculations
         math_df = display_df[actual_cols].copy()
         for col in ['NexusScore', 'GP', 'VORP'] + cats + g_cats:
             if col in math_df.columns:
                 math_df[col] = pd.to_numeric(math_df[col], errors='coerce')
 
-        # NOW fill with empty strings for the display layer
+        # Fill display layer with empty strings
         display_df = display_df.fillna("") 
 
-        # 2. STYLING LAYER
+        # 2. STYLING
         def base_style(val):
             if val == "": return 'background-color: #1c1f26; color: transparent; border: none;'
             return 'background-color: #0e1117; color: #ffffff;'
             
         styled_table = display_df[actual_cols].style.map(base_style)
 
-        # Left Side Contrast
+        # Left Panel Contrast
         left_side_cols = ['Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos']
         styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if x != "" else 'background-color: #1c1f26;', subset=[c for c in left_side_cols if c in actual_cols])
 
-        # GP Anchor & Own Colors
+        # Anchor & Own Colors
         styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if x != "" else 'background-color: #1c1f26;', subset=['GP'])
         styled_table = styled_table.map(lambda x: 'background-color: #00CC96; color: transparent;' if x == 'Mine' else ('background-color: #333333; color: transparent;' if x == 'Taken' else 'background-color: #2A303C;'), subset=['Own'])
 
-        # 3. FORMATTING (Handles the conversion of numbers to display strings safely)
+        # 3. FORMATTING
         def clean_na(val, fmt):
             if val == "": return ""
             try: return fmt.format(float(val))
@@ -355,14 +355,13 @@ with tab1:
         for c in cats: fmt_dict[c] = lambda x: clean_na(x, "{:.0f}")
         styled_table = styled_table.format(formatter=fmt_dict)
 
-        # 4. THE CRASH FIX: Apply Heatmaps using the pre-calculated math_df values
+        # 4. HEATMAPS (Using math_df as gmap to prevent Arrow crashes)
         normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
         for c in normal_heatmaps:
             if c in math_df.columns:
                 q_min = math_df[c].quantile(0.05)
                 q_max = math_df[c].max()
                 if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
-                    # gmap=math_df[c] is the secret sauce that prevents the crash
                     styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max, gmap=math_df[c], text_color_threshold=0.5)
 
         if 'GAA' in math_df.columns:
