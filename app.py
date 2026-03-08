@@ -36,18 +36,17 @@ st.set_page_config(page_title="PuckNexus", layout="wide")
 
 st.markdown("""
 <style>
-    .stApp { background-color: #0e1117; }
+    /* Light Theme Optimized CSS */
     h1 { font-family: 'Helvetica Neue', sans-serif; text-transform: uppercase; font-weight: 900; letter-spacing: 2px; background: -webkit-linear-gradient(45deg, #FF4B4B, #FF914D); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-    div[data-testid="stMetric"] { background-color: #1c1f26; padding: 20px; border-radius: 10px; border-left: 5px solid #FF4B4B; }
+    div[data-testid="stMetric"] { background-color: #FFFFFF; padding: 20px; border-radius: 10px; border-left: 5px solid #FF4B4B; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     
-    /* Style for the Scout Recommendation and Verdicts */
     .stAlert {
         border: none;
-        background-color: #1c1f26;
-        color: white;
+        background-color: #FFFFFF;
+        color: #111111;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
     
-    /* Make metrics pop */
     [data-testid="stMetricValue"] {
         font-size: 32px;
         font-weight: 700;
@@ -263,17 +262,14 @@ with tab1:
 
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
-        # --- FIX 1: THE "STÜTZLE" ACCENT STRIPPER ---
         import unicodedata
         def clean_name(name):
             if pd.isna(name): return ""
-            # This strips all accents, umlauts, and special characters (Stützle -> stutzle)
             return unicodedata.normalize('NFKD', str(name)).encode('ASCII', 'ignore').decode('utf-8').lower().strip()
 
         num_teams = 12 
         try:
             y_data = pd.read_csv("yahoo_export.csv")
-            # Apply the deep clean to Yahoo names
             y_data['match_key'] = y_data['name'].apply(clean_name)
             
             actual_teams = y_data['Fantasy_Team'].nunique()
@@ -286,8 +282,6 @@ with tab1:
                 return "FA" 
                 
             own_map['Own'] = own_map.apply(determine_own, axis=1)
-            
-            # Apply the deep clean to NHL names
             final['match_key'] = final['Player'].apply(clean_name)
             final = pd.merge(final, own_map[['match_key', 'Own']], on='match_key', how='left')
             final['Own'] = final['Own'].fillna("FA")
@@ -316,18 +310,34 @@ with tab1:
         cols_order = ['Own', 'Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
 
-        # Force numeric so Pandas knows exactly what is a number and what is a blank (NaN)
         for col in ['NexusScore', 'GP'] + cats + g_cats:
             if col in display_df.columns:
                 display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
 
+        # Updated Taken color to be a soft grey so it reads beautifully on the light background
         def color_own(val):
             if val == 'Mine': return 'background-color: rgba(0, 204, 150, 0.4); color: transparent;'
-            if val == 'Taken': return 'background-color: rgba(255, 255, 255, 0.2); color: transparent;'
+            if val == 'Taken': return 'background-color: rgba(0, 0, 0, 0.15); color: transparent;'
             return 'color: transparent;' 
 
-        # --- FIX 2: DOWNGRADE FROM NUMBERCOLUMN TO STANDARD COLUMN ---
-        # By removing "NumberColumn", Streamlit stops forcing the word "None" on screen!
+        # --- FIX 1: THE LAMBDA FORMATTERS ---
+        # This explicitly transforms any NaN into a pure, invisible text string before Streamlit can add "None"
+        def clean_na(val, fmt):
+            if pd.isna(val): return ""
+            return fmt.format(val)
+
+        fmt_dict = {
+            'NexusScore': lambda x: clean_na(x, "{:.2f}"),
+            'GP': lambda x: clean_na(x, "{:.0f}"),
+            'GAA': lambda x: clean_na(x, "{:.2f}"),
+            'SV%': lambda x: clean_na(x, "{:.3f}"),
+            'W': lambda x: clean_na(x, "{:.0f}"),
+            'SHO': lambda x: clean_na(x, "{:.0f}")
+        }
+        for c in cats: fmt_dict[c] = lambda x: clean_na(x, "{:.0f}")
+
+        # --- FIX 2: DOWNGRADE TO GENERIC COLUMNS ---
+        # We removed NumberColumn from everything except Rank to stop Streamlit from enforcing numeric text!
         cfg = {
             "Own": st.column_config.Column("", width=30), 
             "Rank": st.column_config.NumberColumn("Rnk", width=40),
@@ -346,19 +356,7 @@ with tab1:
         }
         for c in cats: cfg[c] = st.column_config.Column(c, width=55) 
 
-        # --- FIX 3: RESTORE PANDAS FORMATTER ---
-        # na_rep="" acts as a vacuum, sucking up all NaNs and replacing them with pure empty strings.
-        fmt_dict = {
-            'NexusScore': "{:.2f}",
-            'GP': "{:.0f}",
-            'GAA': "{:.2f}",
-            'SV%': "{:.3f}",
-            'W': "{:.0f}",
-            'SHO': "{:.0f}"
-        }
-        for c in cats: fmt_dict[c] = "{:.0f}"
-
-        styled_table = display_df[actual_cols].style.format(formatter=fmt_dict, na_rep="").map(color_own, subset=['Own'])
+        styled_table = display_df[actual_cols].style.format(formatter=fmt_dict).map(color_own, subset=['Own'])
         
         def round_separators(row):
             if row['Rank'] % num_teams == 0:
@@ -390,6 +388,7 @@ with tab1:
         )
     else:
         st.error("No player data found in global calculation.")
+
 # =========================================
 # TAB 2: SCHEDULE
 # =========================================
