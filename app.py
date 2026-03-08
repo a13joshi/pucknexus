@@ -296,19 +296,24 @@ with tab1:
         }
         for c in cats: cfg[c] = st.column_config.NumberColumn(c, width="small")
 
-        # --- THE FIX: SMART MEAN-CENTERED COLOR SCALING ---
+        # --- THE FIX: TRUE SYMMETRICAL MEAN-CENTERING ---
         # 1. Build the base styler and apply the ownership colors
         styled_table = display_df[actual_cols].style.format("{:.2f}", subset=['VORP', 'NexusScore']).map(color_own, subset=['Own'])
         
-        # 2. Loop through the stat columns and apply the Mean-Centered gradient
+        # 2. Loop through the stat columns and apply a perfectly balanced gradient
         for c in heatmap_cols:
             if c in display_df.columns:
                 mean_val = display_df[c].mean()
-                std_val = max(display_df[c].std(), 0.1) # Safety catch to prevent divide-by-zero
+                max_val = display_df[c].max()
+                min_val = display_df[c].min()
                 
-                # Lock 'yellow' to the exact average. Cap green/red at 2 standard deviations.
-                v_min = mean_val - (2.0 * std_val)
-                v_max = mean_val + (2.0 * std_val)
+                # Find the furthest outlier distance from the average
+                max_distance = max(mean_val - min_val, max_val - mean_val)
+                
+                # By forcing vmin and vmax to be equidistant from the mean, 
+                # Pandas is forced to lock "Yellow" to the exact average!
+                v_min = mean_val - max_distance
+                v_max = mean_val + max_distance
                 
                 styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=v_min, vmax=v_max)
 
