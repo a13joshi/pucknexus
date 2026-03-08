@@ -313,17 +313,17 @@ with tab1:
             if col in display_df.columns:
                 display_df[col] = pd.to_numeric(display_df[col], errors='coerce')
 
-        # --- THE FIX: ADVANCED COLOR MAPPING ---
+        # --- THE FIX: ENHANCED CONTRAST PROFILES ---
         # 1. Base Stats (Right Side)
         def base_style(val):
             if pd.isna(val): return 'background-color: #1c1f26; color: transparent;'
             return 'background-color: #0e1117; color: #ffffff;'
         styled_table = display_df[actual_cols].style.map(base_style)
 
-        # 2. Player Info (Left Side) - Slightly lighter dark shade!
+        # 2. Player Info (Left Side) - Much lighter steel-grey to make it pop!
         left_side_cols = ['Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos']
         def style_left(val):
-            return 'background-color: #161a24; color: #ffffff;'
+            return 'background-color: #2A303C; color: #ffffff;'
         styled_table = styled_table.map(style_left, subset=[c for c in left_side_cols if c in actual_cols])
 
         # 3. GP Anchor
@@ -336,7 +336,7 @@ with tab1:
         def color_own(val):
             if val == 'Mine': return 'background-color: #00CC96; color: transparent;'
             if val == 'Taken': return 'background-color: #333333; color: transparent;'
-            return 'background-color: #161a24; color: transparent;' # Matches the new left-side color
+            return 'background-color: #2A303C; color: transparent;' # Matches the new brighter left-side color
         styled_table = styled_table.map(color_own, subset=['Own'])
 
         def clean_na(val, fmt):
@@ -373,17 +373,13 @@ with tab1:
 
         styled_table = styled_table.format(formatter=fmt_dict)
         
-        # --- THE FIX: BULLETPROOF SEPARATORS ---
+        # --- THE FIX: THICK HORIZONTAL BAR SEPARATORS ---
         def round_separators(row):
             styles = []
             for col in row.index:
-                # Triggers every 12 rows (or whatever your Yahoo league size is)
                 if row['Rank'] % num_teams == 0:
-                    if col == 'Rank':
-                        # Make the Rank text neon orange to visually announce the break!
-                        styles.append('border-bottom: 2px solid #FF914D; color: #FF914D; font-weight: 900;')
-                    else:
-                        styles.append('border-bottom: 2px solid #FF914D;')
+                    # Ripped out the orange text and replaced with a thick 4px slate-grey solid bar
+                    styles.append('border-bottom: 4px solid #556070 !important;')
                 else:
                     styles.append('')
             return styles
