@@ -210,10 +210,7 @@ if evaluated_df.empty:
 
 # --- UI LAYOUT ---
 tab1, tab2, tab3, tab5, tab6, tab7, tab8, tab9 = st.tabs([
-    "📊 DASHBOARD", "📅 SCHEDULE", "⚖️ WAR ROOM", 
-    "🥅 GOALIES", "📈 TRENDS", "🦅 WIRE HAWK", 
-    "🏆 POWER RANKINGS", "⚔️ MATCHUP", "🔮 PLAYOFF PRIMER"
-])
+    "📊 DASHBOARD", "📅 SCHEDULE", "⚖️ WAR ROOM", "📈 TRENDS", "🦅 WIRE HAWK", "🏆 POWER RANKINGS", "⚔️ MATCHUP", "🔮 PLAYOFF PRIMER"])
 
 # =========================================
 # TAB 1: DASHBOARD (The God-Board Edition)
