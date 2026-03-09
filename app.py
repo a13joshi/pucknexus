@@ -247,6 +247,7 @@ with tab1:
         final = pd.DataFrame()
     
     if not final.empty:
+        # --- POSITIONAL BASES ---
         baselines = {}
         for pos in ['C', 'L', 'R', 'D', 'G']:
             pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
@@ -267,6 +268,7 @@ with tab1:
 
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
+        # --- CLEAN NAMES ---
         import unicodedata
         def clean_name(name):
             if pd.isna(name): return ""
@@ -303,8 +305,7 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # --- DATA PREP ---
-        # Crucial: Keep NaNs as they are (Numbers), don't fill with strings!
+        # --- PREPARE DATA ---
         display_df = final.copy()
         display_df['Rank'] = range(1, len(display_df) + 1)
         if 'Team' in display_df.columns: display_df = display_df.rename(columns={'Team': 'NHL Team'})
@@ -313,25 +314,25 @@ with tab1:
         cols_order = ['Own', 'Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
 
-        # --- STYLING & MASKING ---
-        # FIX: The styler checks for pd.isna and applies the transparent "mask"
+        # --- VISUAL MASKING & STYLING ---
+        # We use pd.isna() for the visual mask to handle numeric NaNs
         def base_style(val):
-            if pd.isna(val): 
+            if pd.isna(val) or val == "": 
                 return 'background-color: #1c1f26; color: transparent; border: none;'
             return 'background-color: #0e1117; color: #ffffff;'
             
         styled_table = display_df[actual_cols].style.map(base_style)
 
-        # Left Panel (Profile) Highlights
+        # Profile Section Highlights
         left_side_cols = ['Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos']
         styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if not pd.isna(x) else 'background-color: #1c1f26;', subset=[c for c in left_side_cols if c in actual_cols])
 
-        # GP Anchor & Own Column Colors
+        # GP Anchor & Own Column
         styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if not pd.isna(x) else 'background-color: #1c1f26;', subset=['GP'])
         styled_table = styled_table.map(lambda x: 'background-color: #00CC96; color: transparent;' if x == 'Mine' else ('background-color: #333333; color: transparent;' if x == 'Taken' else 'background-color: #2A303C;'), subset=['Own'])
 
-        # --- FORMATTING (The "None" Assassin) ---
-        # Secret Sauce: na_rep="" replaces all NaNs with an empty string visually without changing data types
+        # --- THE "NONE" ASSASSIN ---
+        # na_rep="" is the secret: it replaces nulls with empty space visually without changing data types
         fmt_dict = {
             'NexusScore': "{:.2f}",
             'VORP': "{:.2f}",
@@ -342,7 +343,6 @@ with tab1:
             'SHO': "{:.0f}"
         }
         for c in cats: fmt_dict[c] = "{:.0f}"
-        
         styled_table = styled_table.format(formatter=fmt_dict, na_rep="")
 
         # --- HEATMAPS ---
@@ -371,7 +371,7 @@ with tab1:
             return styles
         styled_table = styled_table.apply(round_separators, axis=1)
 
-        # --- RENDER ---
+        # --- CONFIG & RENDER ---
         cfg = {
             "Own": st.column_config.Column("", width=30), 
             "Rank": st.column_config.NumberColumn("Rnk", width=40),
