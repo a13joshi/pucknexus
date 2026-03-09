@@ -255,7 +255,7 @@ with tab1:
         for pos in ['C', 'L', 'R', 'D', 'G']:
             pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
             if pos == 'D': rep_idx = 48
-            elif pos == 'G': rep_idx = 24 
+            elif pos == 'G': rep_idx = 24
             else: rep_idx = 36
             if len(pos_players) > rep_idx:
                 baselines[pos] = pos_players.iloc[rep_idx]['NexusScore']
@@ -286,7 +286,7 @@ with tab1:
             def determine_own(row):
                 if row.get('Is_Mine') == True: return "Mine"
                 if row.get('Status') == 'Rostered': return "Taken"
-                return "FA" 
+                return "FA"
             own_map['Own'] = own_map.apply(determine_own, axis=1)
             final['match_key'] = final['Player'].apply(clean_name)
             final = pd.merge(final, own_map[['match_key', 'Own']], on='match_key', how='left')
@@ -307,55 +307,45 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # --- DATA PREP: THE DOUBLE-LOCK NONE ASSASSIN ---
         display_df = final.copy()
         display_df['Rank'] = range(1, len(display_df) + 1)
         if 'Team' in display_df.columns: display_df = display_df.rename(columns={'Team': 'NHL Team'})
         
-        # Replace NaN with a Zero-Width Space (\u200b) to trick Streamlit into not showing "None"
-        display_df = display_df.fillna('\u200b') 
-
         g_cats = ['W', 'GAA', 'SV%', 'SHO']
         cols_order = ['Own', 'Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
 
-        # --- STYLING ---
+        # 1. Hidden Numeric Map: Keeps the math clean for gradients and stops Arrow crashes
+        math_df = display_df[actual_cols].copy()
+        for col in ['NexusScore', 'GP', 'VORP'] + cats + g_cats:
+            if col in math_df.columns:
+                math_df[col] = pd.to_numeric(math_df[col], errors='coerce')
+
+        # 2. Styling Layer: Mask NaNs with transparent text visually
         def base_style(val):
-            # Mask the Zero-Width space with transparent text just to be safe
-            if val == '\u200b': 
+            if pd.isna(val): 
                 return 'background-color: #1c1f26; color: transparent; border: none;'
             return 'background-color: #0e1117; color: #ffffff;'
             
         styled_table = display_df[actual_cols].style.map(base_style)
 
-        # Lighter Panel Highlights (Left Side) - Brighter steel-grey (#2A303C)
+        # Left Panel Steel Highlights (#2A303C)
         left_side_cols = ['Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos']
-        styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if x != '\u200b' else 'background-color: #1c1f26;', subset=[c for c in left_side_cols if c in actual_cols])
+        styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if pd.notna(x) else 'background-color: #1c1f26;', subset=[c for c in left_side_cols if c in actual_cols])
 
         # GP Anchor & Ownership
-        styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if x != '\u200b' else 'background-color: #1c1f26;', subset=['GP'])
+        styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if pd.notna(x) else 'background-color: #1c1f26;', subset=['GP'])
         styled_table = styled_table.map(lambda x: 'background-color: #00CC96; color: transparent;' if x == 'Mine' else ('background-color: #333333; color: transparent;' if x == 'Taken' else 'background-color: #2A303C;'), subset=['Own'])
 
-        # --- FORMATTING ---
-        def clean_fmt(val, f_str):
-            if val == '\u200b': return val # Keep the invisible character
-            try: return f_str.format(float(val))
-            except: return str(val)
-
+        # 3. Formatting: na_rep="" is the true "None" Assassin. It tells the browser to show empty strings for NaNs
         fmt_dict = {
-            'NexusScore': lambda x: clean_fmt(x, "{:.2f}"),
-            'VORP': lambda x: clean_fmt(x, "{:.2f}"),
-            'GP': lambda x: clean_fmt(x, "{:.0f}"),
-            'GAA': lambda x: clean_fmt(x, "{:.2f}"),
-            'SV%': lambda x: clean_fmt(x, "{:.3f}"),
-            'W': lambda x: clean_fmt(x, "{:.0f}"),
-            'SHO': lambda x: clean_fmt(x, "{:.0f}")
+            'NexusScore': "{:.2f}", 'VORP': "{:.2f}", 'GP': "{:.0f}",
+            'GAA': "{:.2f}", 'SV%': "{:.3f}", 'W': "{:.0f}", 'SHO': "{:.0f}"
         }
-        for c in cats: fmt_dict[c] = lambda x: clean_fmt(x, "{:.0f}")
-        styled_table = styled_table.format(formatter=fmt_dict)
+        for c in cats: fmt_dict[c] = "{:.0f}"
+        styled_table = styled_table.format(formatter=fmt_dict, na_rep="")
 
-        # --- HEATMAPS (Using gmap to prevent math errors with our invisible character) ---
-        math_df = final.copy()
+        # 4. Gradients: Use gmap=math_df to bypass serialization errors
         normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
         for c in normal_heatmaps:
             if c in math_df.columns:
@@ -370,7 +360,7 @@ with tab1:
             if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
                 styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max, gmap=math_df['GAA'], text_color_threshold=0.5)
 
-        # Separators every 12 rows (League size)
+        # Separators every league-size rows
         def round_separators(row):
             styles = []
             for col in row.index:
