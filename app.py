@@ -247,6 +247,7 @@ with tab1:
         final = pd.DataFrame()
     
     if not final.empty:
+        # --- POSITIONAL BASES ---
         baselines = {}
         for pos in ['C', 'L', 'R', 'D', 'G']:
             pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
@@ -267,6 +268,7 @@ with tab1:
 
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
+        # --- CLEAN NAMES FOR SYNC ---
         import unicodedata
         def clean_name(name):
             if pd.isna(name): return ""
@@ -303,7 +305,8 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # 1. DATA PREP: Keep a numeric version for math and a string version for display
+        # --- PREPARE DISPLAY DF ---
+        # DO NOT use .fillna("") here; keep numeric columns as floats for Arrow compatibility
         display_df = final.copy()
         display_df['Rank'] = range(1, len(display_df) + 1)
         
@@ -313,64 +316,63 @@ with tab1:
         cols_order = ['Own', 'Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
 
-        # Create numeric-only gmap for color calculations
-        math_df = display_df[actual_cols].copy()
-        for col in ['NexusScore', 'GP', 'VORP'] + cats + g_cats:
-            if col in math_df.columns:
-                math_df[col] = pd.to_numeric(math_df[col], errors='coerce')
-
-        # Fill display layer with empty strings
-        display_df = display_df.fillna("") 
-
-        # 2. STYLING
+        # --- STYLING & THE "NONE" ASSASSIN ---
+        # We use the Styler to replace NaN with invisible blanks visually
         def base_style(val):
-            if val == "": return 'background-color: #1c1f26; color: transparent; border: none;'
+            if pd.isna(val) or val == "": 
+                return 'background-color: #1c1f26; color: transparent; border: none;'
             return 'background-color: #0e1117; color: #ffffff;'
             
         styled_table = display_df[actual_cols].style.map(base_style)
 
         # Left Panel Contrast
         left_side_cols = ['Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos']
-        styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if x != "" else 'background-color: #1c1f26;', subset=[c for c in left_side_cols if c in actual_cols])
+        styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if not pd.isna(x) else 'background-color: #1c1f26;', subset=[c for c in left_side_cols if c in actual_cols])
 
-        # Anchor & Own Colors
-        styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if x != "" else 'background-color: #1c1f26;', subset=['GP'])
+        # GP Anchor & Own Colors
+        styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if not pd.isna(x) else 'background-color: #1c1f26;', subset=['GP'])
         styled_table = styled_table.map(lambda x: 'background-color: #00CC96; color: transparent;' if x == 'Mine' else ('background-color: #333333; color: transparent;' if x == 'Taken' else 'background-color: #2A303C;'), subset=['Own'])
 
-        # 3. FORMATTING
-        def clean_na(val, fmt):
-            if val == "": return ""
-            try: return fmt.format(float(val))
-            except: return str(val)
-
+        # FORMATTING (na_rep="" is the secret to killing "None" without crashing)
         fmt_dict = {
-            'NexusScore': lambda x: clean_na(x, "{:.2f}"),
-            'VORP': lambda x: clean_na(x, "{:.2f}"),
-            'GP': lambda x: clean_na(x, "{:.0f}"),
-            'GAA': lambda x: clean_na(x, "{:.2f}"),
-            'SV%': lambda x: clean_na(x, "{:.3f}"),
-            'W': lambda x: clean_na(x, "{:.0f}"),
-            'SHO': lambda x: clean_na(x, "{:.0f}")
+            'NexusScore': "{:.2f}",
+            'VORP': "{:.2f}",
+            'GP': "{:.0f}",
+            'GAA': "{:.2f}",
+            'SV%': "{:.3f}",
+            'W': "{:.0f}",
+            'SHO': "{:.0f}"
         }
-        for c in cats: fmt_dict[c] = lambda x: clean_na(x, "{:.0f}")
-        styled_table = styled_table.format(formatter=fmt_dict)
+        for c in cats: fmt_dict[c] = "{:.0f}"
+        styled_table = styled_table.format(formatter=fmt_dict, na_rep="")
 
-        # 4. HEATMAPS (Using math_df as gmap to prevent Arrow crashes)
+        # HEATMAPS
         normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
         for c in normal_heatmaps:
-            if c in math_df.columns:
-                q_min = math_df[c].quantile(0.05)
-                q_max = math_df[c].max()
+            if c in display_df.columns:
+                q_min = display_df[c].quantile(0.05)
+                q_max = display_df[c].max()
                 if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
-                    styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max, gmap=math_df[c], text_color_threshold=0.5)
+                    styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max, text_color_threshold=0.5)
 
-        if 'GAA' in math_df.columns:
-            q_min = math_df['GAA'].min()
-            q_max = math_df['GAA'].quantile(0.95)
+        if 'GAA' in display_df.columns:
+            q_min = display_df['GAA'].min()
+            q_max = display_df['GAA'].quantile(0.95)
             if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
-                styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max, gmap=math_df['GAA'], text_color_threshold=0.5)
+                styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max, text_color_threshold=0.5)
 
-        # 5. RENDER
+        # SEPARATORS
+        def round_separators(row):
+            styles = []
+            for col in row.index:
+                if row['Rank'] % num_teams == 0:
+                    styles.append('border-bottom: 4px solid #556070 !important;')
+                else:
+                    styles.append('')
+            return styles
+        styled_table = styled_table.apply(round_separators, axis=1)
+
+        # RENDER
         cfg = {
             "Own": st.column_config.Column("", width=30), 
             "Rank": st.column_config.NumberColumn("Rnk", width=40),
