@@ -321,15 +321,15 @@ with tab1:
             if col in math_df.columns:
                 math_df[col] = pd.to_numeric(math_df[col], errors='coerce')
 
-        # 2. Styling Layer: Mask NaNs with transparent text
+        # 2. Styling Layer: Using Zero-Width Space (\u200b) to trick the engine
         def base_style(val):
-            if pd.isna(val): 
+            if pd.isna(val) or val == "": 
                 return 'background-color: #1c1f26; color: transparent; border: none;'
             return 'background-color: #0e1117; color: #ffffff;'
             
         styled_table = display_df[actual_cols].style.map(base_style)
 
-        # Left Panel Steel Highlights
+        # Left Panel Steel Highlights (#2A303C)
         left_side_cols = ['Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos']
         styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if pd.notna(x) else 'background-color: #1c1f26;', subset=[c for c in left_side_cols if c in actual_cols])
 
@@ -337,13 +337,23 @@ with tab1:
         styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if pd.notna(x) else 'background-color: #1c1f26;', subset=['GP'])
         styled_table = styled_table.map(lambda x: 'background-color: #00CC96; color: transparent;' if x == 'Mine' else ('background-color: #333333; color: transparent;' if x == 'Taken' else 'background-color: #2A303C;'), subset=['Own'])
 
-        # 3. Formatting: na_rep="" is the true "None" Assassin
+        # 3. THE "NONE" ASSASSIN: Forced Invisible Formatting
+        def mask_none(val, f_str):
+            if pd.isna(val): return "\u200b" # Invisible character trick
+            try: return f_str.format(float(val))
+            except: return str(val)
+
         fmt_dict = {
-            'NexusScore': "{:.2f}", 'VORP': "{:.2f}", 'GP': "{:.0f}",
-            'GAA': "{:.2f}", 'SV%': "{:.3f}", 'W': "{:.0f}", 'SHO': "{:.0f}"
+            'NexusScore': lambda x: mask_none(x, "{:.2f}"),
+            'VORP': lambda x: mask_none(x, "{:.2f}"),
+            'GP': lambda x: mask_none(x, "{:.0f}"),
+            'GAA': lambda x: mask_none(x, "{:.2f}"),
+            'SV%': lambda x: mask_none(x, "{:.3f}"),
+            'W': lambda x: mask_none(x, "{:.0f}"),
+            'SHO': lambda x: mask_none(x, "{:.0f}")
         }
-        for c in cats: fmt_dict[c] = "{:.0f}"
-        styled_table = styled_table.format(formatter=fmt_dict, na_rep="")
+        for c in cats: fmt_dict[c] = lambda x: mask_none(x, "{:.0f}")
+        styled_table = styled_table.format(formatter=fmt_dict)
 
         # 4. Gradients: Use gmap=math_df to bypass serialization errors
         normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
@@ -360,7 +370,7 @@ with tab1:
             if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
                 styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max, gmap=math_df['GAA'], text_color_threshold=0.5)
 
-        # Separators every 12 rows
+        # Separators every league-size rows
         def round_separators(row):
             styles = []
             for col in row.index:
