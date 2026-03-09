@@ -247,7 +247,11 @@ with tab1:
         final = pd.DataFrame()
     
     if not final.empty:
-        # --- POSITIONAL BASES ---
+        # --- THE FIX: DEDUPLICATE TRADED PLAYERS ---
+        # If a player has multiple rows (multiple teams), we keep only the last entry 
+        # (which corresponds to their current/most recent team in the NHL API)
+        final = final.sort_values('GP', ascending=True).drop_duplicates('Player', keep='last')
+
         baselines = {}
         for pos in ['C', 'L', 'R', 'D', 'G']:
             pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
@@ -268,7 +272,6 @@ with tab1:
 
         final['VORP'] = final.apply(calculate_vorp, axis=1)
 
-        # --- CLEAN NAMES ---
         import unicodedata
         def clean_name(name):
             if pd.isna(name): return ""
@@ -305,7 +308,6 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # --- PREPARE DATA ---
         display_df = final.copy()
         display_df['Rank'] = range(1, len(display_df) + 1)
         if 'Team' in display_df.columns: display_df = display_df.rename(columns={'Team': 'NHL Team'})
@@ -314,38 +316,35 @@ with tab1:
         cols_order = ['Own', 'Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos', 'VORP', 'NexusScore', 'GP'] + cats + g_cats
         actual_cols = [c for c in cols_order if c in display_df.columns]
 
-        # --- VISUAL MASKING & STYLING ---
-        # We use pd.isna() for the visual mask to handle numeric NaNs
+        # --- THE "NONE" ASSASSIN: STYLE-BASED MASKING ---
         def base_style(val):
-            if pd.isna(val) or val == "": 
-                return 'background-color: #1c1f26; color: transparent; border: none;'
+            # If the value is mathematically missing, force the background to match the anchor 
+            # and make the text transparent so "None" cannot be seen.
+            if pd.isna(val): 
+                return 'background-color: #1c1f26; color: rgba(0,0,0,0); border: none;'
             return 'background-color: #0e1117; color: #ffffff;'
             
         styled_table = display_df[actual_cols].style.map(base_style)
 
-        # Profile Section Highlights
+        # Highlight Profile Section (Left Side)
         left_side_cols = ['Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos']
-        styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if not pd.isna(x) else 'background-color: #1c1f26;', subset=[c for c in left_side_cols if c in actual_cols])
+        styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if not pd.isna(x) else 'background-color: #1c1f26; color: rgba(0,0,0,0);', subset=[c for c in left_side_cols if c in actual_cols])
 
-        # GP Anchor & Own Column
-        styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if not pd.isna(x) else 'background-color: #1c1f26;', subset=['GP'])
-        styled_table = styled_table.map(lambda x: 'background-color: #00CC96; color: transparent;' if x == 'Mine' else ('background-color: #333333; color: transparent;' if x == 'Taken' else 'background-color: #2A303C;'), subset=['Own'])
+        # GP Anchor & Own Column Styling
+        styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if not pd.isna(x) else 'background-color: #1c1f26; color: rgba(0,0,0,0);', subset=['GP'])
+        styled_table = styled_table.map(lambda x: 'background-color: #00CC96; color: transparent;' if x == 'Mine' else ('background-color: #333333; color: transparent;' if x == 'Taken' else 'background-color: #2A303C; color: transparent;'), subset=['Own'])
 
-        # --- THE "NONE" ASSASSIN ---
-        # na_rep="" is the secret: it replaces nulls with empty space visually without changing data types
+        # FORMATTING (Apply formatting only to non-null values)
         fmt_dict = {
-            'NexusScore': "{:.2f}",
-            'VORP': "{:.2f}",
-            'GP': "{:.0f}",
-            'GAA': "{:.2f}",
-            'SV%': "{:.3f}",
-            'W': "{:.0f}",
-            'SHO': "{:.0f}"
+            'NexusScore': "{:.2f}", 'VORP': "{:.2f}", 'GP': "{:.0f}",
+            'GAA': "{:.2f}", 'SV%': "{:.3f}", 'W': "{:.0f}", 'SHO': "{:.0f}"
         }
         for c in cats: fmt_dict[c] = "{:.0f}"
-        styled_table = styled_table.format(formatter=fmt_dict, na_rep="")
+        
+        # na_rep=" " ensures that Streamlit receives a single space instead of the word "None"
+        styled_table = styled_table.format(formatter=fmt_dict, na_rep=" ")
 
-        # --- HEATMAPS ---
+        # HEATMAPS
         normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
         for c in normal_heatmaps:
             if c in display_df.columns:
@@ -360,7 +359,7 @@ with tab1:
             if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
                 styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max, text_color_threshold=0.5)
 
-        # --- SEPARATORS ---
+        # SEPARATORS
         def round_separators(row):
             styles = []
             for col in row.index:
@@ -371,7 +370,6 @@ with tab1:
             return styles
         styled_table = styled_table.apply(round_separators, axis=1)
 
-        # --- CONFIG & RENDER ---
         cfg = {
             "Own": st.column_config.Column("", width=30), 
             "Rank": st.column_config.NumberColumn("Rnk", width=40),
