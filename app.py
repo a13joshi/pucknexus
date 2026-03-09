@@ -248,14 +248,14 @@ with tab1:
     
     if not final.empty:
         # --- FIX: SHOW ONLY CURRENT TEAM ---
-        # Sort by GP to preserve the most recent team and drop duplicates
+        # Keep only the most recent entry for players traded mid-season
         final = final.sort_values('GP', ascending=True).drop_duplicates('Player', keep='last')
 
         baselines = {}
         for pos in ['C', 'L', 'R', 'D', 'G']:
             pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
             if pos == 'D': rep_idx = 48
-            elif pos == 'G': rep_idx = 24
+            elif pos == 'G': rep_idx = 24 
             else: rep_idx = 36
             if len(pos_players) > rep_idx:
                 baselines[pos] = pos_players.iloc[rep_idx]['NexusScore']
@@ -286,7 +286,7 @@ with tab1:
             def determine_own(row):
                 if row.get('Is_Mine') == True: return "Mine"
                 if row.get('Status') == 'Rostered': return "Taken"
-                return "FA"
+                return "FA" 
             own_map['Own'] = own_map.apply(determine_own, axis=1)
             final['match_key'] = final['Player'].apply(clean_name)
             final = pd.merge(final, own_map[['match_key', 'Own']], on='match_key', how='left')
@@ -307,6 +307,7 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
+        # --- THE CLEANSE ---
         display_df = final.copy()
         display_df['Rank'] = range(1, len(display_df) + 1)
         if 'Team' in display_df.columns: display_df = display_df.rename(columns={'Team': 'NHL Team'})
@@ -321,15 +322,15 @@ with tab1:
             if col in math_df.columns:
                 math_df[col] = pd.to_numeric(math_df[col], errors='coerce')
 
-        # 2. Styling Layer: Using Zero-Width Space (\u200b) to trick the engine
+        # 2. Styling Layer: Mask NaNs with transparent text
         def base_style(val):
-            if pd.isna(val) or val == "": 
+            if pd.isna(val): 
                 return 'background-color: #1c1f26; color: transparent; border: none;'
             return 'background-color: #0e1117; color: #ffffff;'
             
         styled_table = display_df[actual_cols].style.map(base_style)
 
-        # Left Panel Steel Highlights (#2A303C)
+        # Left Panel Steel Highlights
         left_side_cols = ['Rank', 'Headshot', 'NHL Team', 'Logo', 'Player', 'Pos']
         styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if pd.notna(x) else 'background-color: #1c1f26;', subset=[c for c in left_side_cols if c in actual_cols])
 
@@ -337,23 +338,13 @@ with tab1:
         styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if pd.notna(x) else 'background-color: #1c1f26;', subset=['GP'])
         styled_table = styled_table.map(lambda x: 'background-color: #00CC96; color: transparent;' if x == 'Mine' else ('background-color: #333333; color: transparent;' if x == 'Taken' else 'background-color: #2A303C;'), subset=['Own'])
 
-        # 3. THE "NONE" ASSASSIN: Forced Invisible Formatting
-        def mask_none(val, f_str):
-            if pd.isna(val): return "\u200b" # Invisible character trick
-            try: return f_str.format(float(val))
-            except: return str(val)
-
+        # 3. Formatting: na_rep="" is the true "None" Assassin
         fmt_dict = {
-            'NexusScore': lambda x: mask_none(x, "{:.2f}"),
-            'VORP': lambda x: mask_none(x, "{:.2f}"),
-            'GP': lambda x: mask_none(x, "{:.0f}"),
-            'GAA': lambda x: mask_none(x, "{:.2f}"),
-            'SV%': lambda x: mask_none(x, "{:.3f}"),
-            'W': lambda x: mask_none(x, "{:.0f}"),
-            'SHO': lambda x: mask_none(x, "{:.0f}")
+            'NexusScore': "{:.2f}", 'VORP': "{:.2f}", 'GP': "{:.0f}",
+            'GAA': "{:.2f}", 'SV%': "{:.3f}", 'W': "{:.0f}", 'SHO': "{:.0f}"
         }
-        for c in cats: fmt_dict[c] = lambda x: mask_none(x, "{:.0f}")
-        styled_table = styled_table.format(formatter=fmt_dict)
+        for c in cats: fmt_dict[c] = "{:.0f}"
+        styled_table = styled_table.format(formatter=fmt_dict, na_rep="")
 
         # 4. Gradients: Use gmap=math_df to bypass serialization errors
         normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
@@ -370,7 +361,7 @@ with tab1:
             if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
                 styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max, gmap=math_df['GAA'], text_color_threshold=0.5)
 
-        # Separators every league-size rows
+        # Separators every 12 rows
         def round_separators(row):
             styles = []
             for col in row.index:
