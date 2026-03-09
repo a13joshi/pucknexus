@@ -248,14 +248,14 @@ with tab1:
     
     if not final.empty:
         # --- FIX: SHOW ONLY CURRENT TEAM ---
-        # Keep only the most recent entry for players traded mid-season
+        # Sort by GP to preserve the most recent team and drop duplicates
         final = final.sort_values('GP', ascending=True).drop_duplicates('Player', keep='last')
 
         baselines = {}
         for pos in ['C', 'L', 'R', 'D', 'G']:
             pos_players = final[final['Pos'].str.contains(pos, na=False)].sort_values('NexusScore', ascending=False)
             if pos == 'D': rep_idx = 48
-            elif pos == 'G': rep_idx = 24 
+            elif pos == 'G': rep_idx = 24
             else: rep_idx = 36
             if len(pos_players) > rep_idx:
                 baselines[pos] = pos_players.iloc[rep_idx]['NexusScore']
@@ -286,7 +286,7 @@ with tab1:
             def determine_own(row):
                 if row.get('Is_Mine') == True: return "Mine"
                 if row.get('Status') == 'Rostered': return "Taken"
-                return "FA" 
+                return "FA"
             own_map['Own'] = own_map.apply(determine_own, axis=1)
             final['match_key'] = final['Player'].apply(clean_name)
             final = pd.merge(final, own_map[['match_key', 'Own']], on='match_key', how='left')
@@ -307,7 +307,6 @@ with tab1:
         if 'Team' in final.columns: final['Logo'] = final['Team'].apply(get_team_logo)
         if 'playerId' in final.columns: final['Headshot'] = final.apply(get_headshot, axis=1)
 
-        # --- THE CLEANSE ---
         display_df = final.copy()
         display_df['Rank'] = range(1, len(display_df) + 1)
         if 'Team' in display_df.columns: display_df = display_df.rename(columns={'Team': 'NHL Team'})
@@ -335,7 +334,64 @@ with tab1:
         styled_table = styled_table.map(lambda x: 'background-color: #2A303C; color: #ffffff;' if pd.notna(x) else 'background-color: #1c1f26;', subset=[c for c in left_side_cols if c in actual_cols])
 
         # GP Anchor & Ownership
-        styled_table = styled_table.map(lambda x
+        styled_table = styled_table.map(lambda x: 'background-color: #1c1f26; color: #ffffff; font-weight: bold;' if pd.notna(x) else 'background-color: #1c1f26;', subset=['GP'])
+        styled_table = styled_table.map(lambda x: 'background-color: #00CC96; color: transparent;' if x == 'Mine' else ('background-color: #333333; color: transparent;' if x == 'Taken' else 'background-color: #2A303C;'), subset=['Own'])
+
+        # 3. Formatting: na_rep="" is the true "None" Assassin
+        fmt_dict = {
+            'NexusScore': "{:.2f}", 'VORP': "{:.2f}", 'GP': "{:.0f}",
+            'GAA': "{:.2f}", 'SV%': "{:.3f}", 'W': "{:.0f}", 'SHO': "{:.0f}"
+        }
+        for c in cats: fmt_dict[c] = "{:.0f}"
+        styled_table = styled_table.format(formatter=fmt_dict, na_rep="")
+
+        # 4. Gradients: Use gmap=math_df to bypass serialization errors
+        normal_heatmaps = ['NexusScore'] + cats + ['W', 'SV%', 'SHO']
+        for c in normal_heatmaps:
+            if c in math_df.columns:
+                q_min = math_df[c].quantile(0.05)
+                q_max = math_df[c].max()
+                if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
+                    styled_table = styled_table.background_gradient(cmap="RdYlGn", subset=[c], vmin=q_min, vmax=q_max, gmap=math_df[c], text_color_threshold=0.5)
+
+        if 'GAA' in math_df.columns:
+            q_min = math_df['GAA'].min()
+            q_max = math_df['GAA'].quantile(0.95)
+            if pd.notna(q_min) and pd.notna(q_max) and q_min != q_max:
+                styled_table = styled_table.background_gradient(cmap="RdYlGn_r", subset=['GAA'], vmin=q_min, vmax=q_max, gmap=math_df['GAA'], text_color_threshold=0.5)
+
+        # Separators every 12 rows
+        def round_separators(row):
+            styles = []
+            for col in row.index:
+                if row['Rank'] % num_teams == 0:
+                    styles.append('border-bottom: 4px solid #556070 !important;')
+                else:
+                    styles.append('')
+            return styles
+        styled_table = styled_table.apply(round_separators, axis=1)
+
+        cfg = {
+            "Own": st.column_config.Column("", width=30), 
+            "Rank": st.column_config.NumberColumn("Rnk", width=40),
+            "Headshot": st.column_config.ImageColumn("", width=35),
+            "NHL Team": st.column_config.Column("Team", width=45), 
+            "Logo": st.column_config.ImageColumn("", width=35), 
+            "Player": st.column_config.Column("Player", width=150), 
+            "Pos": st.column_config.Column("Pos", width=40),
+            "VORP": st.column_config.ProgressColumn("Scarcity", format="%.2f", min_value=-2.0, max_value=4.0, width=90), 
+            "NexusScore": st.column_config.Column("NexusScore", width=75),
+            "GP": st.column_config.Column("GP", width=60),
+            "W": st.column_config.Column("W", width=60),
+            "GAA": st.column_config.Column("GAA", width=65),
+            "SV%": st.column_config.Column("SV%", width=65),
+            "SHO": st.column_config.Column("SHO", width=60)
+        }
+        for c in cats: cfg[c] = st.column_config.Column(c, width=65)
+
+        st.dataframe(styled_table, height=800, column_config=cfg, hide_index=True, use_container_width=False)
+    else:
+        st.error("No skater data found.")
 
 # =========================================
 # TAB 2: SCHEDULE
