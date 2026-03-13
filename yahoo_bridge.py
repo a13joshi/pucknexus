@@ -135,7 +135,7 @@ def fetch_yahoo_data(selected_league_key):
 
         df = pd.DataFrame(all_players)
         df = df.drop_duplicates(subset=['match_key'])
-        df.to_csv("yahoo_export.csv", index=False)
+        return df
 
     finally:
         if os.path.exists(temp_oauth_file): os.remove(temp_oauth_file)

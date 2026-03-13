@@ -160,15 +160,18 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                     if st.button(f"🔄 Sync Data", use_container_width=True):
                         with st.spinner("Pulling fresh data..."):
                             yahoo_df = fetch_yahoo_data(leagues_dict[selected_league_name])
-                            st.session_state['yahoo_data'] = yahoo_df
-                            guid = st.session_state['yahoo_token_data'].get('guid', 'unknown')
-                            records = yahoo_df.to_dict(orient='records')
-                            for rec in records:
-                                rec['guid'] = guid
-                            supabase.table('yahoo_league_cache').delete().eq('guid', guid).execute()
-                            supabase.table('yahoo_league_cache').insert(records).execute()
-                            st.success("Synced!")
-                            st.rerun()
+                            if yahoo_df is None or yahoo_df.empty:
+                                st.error("Sync failed — no data returned. Check your league connection.")
+                            else:
+                                st.session_state['yahoo_data'] = yahoo_df
+                                guid = st.session_state['yahoo_token_data'].get('guid', 'unknown')
+                                records = yahoo_df.to_dict(orient='records')
+                                for rec in records:
+                                    rec['guid'] = guid
+                                supabase.table('yahoo_league_cache').delete().eq('guid', guid).execute()
+                                supabase.table('yahoo_league_cache').insert(records).execute()
+                                st.success("Synced!")
+                                st.rerun()
                 with c_dis:
                     if st.button("Disconnect", type="tertiary", use_container_width=True):
                         del st.session_state['yahoo_token_data']
