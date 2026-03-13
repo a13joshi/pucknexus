@@ -186,7 +186,7 @@ st.write("SUPABASE_URL:", os.environ.get("SUPABASE_URL", "MISSING"))
 st.write("SUPABASE_KEY:", os.environ.get("SUPABASE_KEY", "MISSING")[:15] if os.environ.get("SUPABASE_KEY") else "MISSING")
 from supabase_config import supabase
 st.write("Supabase:", str(supabase)[:50])
-st.write("Skaters empty:", s_df_global.empty)
+
 # END DEBUG
 
 # --- RESTORE YAHOO DATA FROM SUPABASE ON FRESH SESSION ---
@@ -205,6 +205,10 @@ calc_end_date = stats_end_date if stats_end_date else None
 
 s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
 g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
+
+st.write("Skaters shape:", s_df_global.shape)
+st.write("Goalies shape:", g_df_global.shape)
+st.write("Skater cols:", list(s_df_global.columns))
 
 if timeframe != "Full Season":
     s_base = load_skaters(calc_season, None, None)
