@@ -1,10 +1,20 @@
 import streamlit as st
+import os
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta, date
 import warnings
 warnings.filterwarnings("ignore", category=SyntaxWarning)
+
+try:
+    if "SUPABASE_URL" in st.secrets:
+        os.environ["SUPABASE_URL"] = st.secrets["SUPABASE_URL"]
+    if "SUPABASE_KEY" in st.secrets:
+        os.environ["SUPABASE_KEY"] = st.secrets["SUPABASE_KEY"]
+except Exception:
+    pass  # Running locally, .env handles it
+
 
 from data_fetcher import get_nhl_skater_stats, get_nhl_goalie_stats, get_nhl_schedule, get_fantasy_weeks
 from monster_math import calculate_z_scores
