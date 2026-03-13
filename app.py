@@ -180,6 +180,15 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
 
 st.divider()
 
+# TEMP DEBUG
+import os
+st.write("SUPABASE_URL:", os.environ.get("SUPABASE_URL", "MISSING"))
+st.write("SUPABASE_KEY:", os.environ.get("SUPABASE_KEY", "MISSING")[:15] if os.environ.get("SUPABASE_KEY") else "MISSING")
+from supabase_config import supabase
+st.write("Supabase:", str(supabase)[:50])
+st.write("Skaters empty:", s_df_global.empty)
+# END DEBUG
+
 # --- RESTORE YAHOO DATA FROM SUPABASE ON FRESH SESSION ---
 if 'yahoo_data' not in st.session_state:
     if 'yahoo_token_data' in st.session_state:
