@@ -180,14 +180,6 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
 
 st.divider()
 
-# TEMP DEBUG
-st.write("SUPABASE_URL:", os.environ.get("SUPABASE_URL", "MISSING"))
-st.write("SUPABASE_KEY:", os.environ.get("SUPABASE_KEY", "MISSING")[:15] if os.environ.get("SUPABASE_KEY") else "MISSING")
-from supabase_config import supabase
-st.write("Supabase:", str(supabase)[:50])
-
-# END DEBUG
-
 # --- RESTORE YAHOO DATA FROM SUPABASE ON FRESH SESSION ---
 if 'yahoo_data' not in st.session_state:
     if 'yahoo_token_data' in st.session_state:
@@ -202,14 +194,8 @@ calc_season = season_choice if 'season_choice' in locals() else "20252026"
 calc_start_date = stats_start_date if stats_start_date else None
 calc_end_date = stats_end_date if stats_end_date else None
 
-st.cache_data.clear()  # TEMP - remove after one deploy
-
 s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
 g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
-
-st.write("Skaters shape:", s_df_global.shape)
-st.write("Goalies shape:", g_df_global.shape)
-st.write("Skater cols:", list(s_df_global.columns))
 
 if timeframe != "Full Season":
     s_base = load_skaters(calc_season, None, None)
