@@ -8,4 +8,4 @@ __pycache__/
 venv_stable/
 yahoo_export.csv
 oauth2.json
-temp_oauth.json
+temp_oauth.json.streamlit/secrets.toml

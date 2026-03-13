@@ -22,9 +22,9 @@ def get_team_logo(team_abbr):
     if not team_abbr or pd.isna(team_abbr): return ""
     # Updated map for better visibility of specific team logos
     logo_map = {
-        "NJD": "nj", "SJS": "sj", "TBL": "tb", "LAK": "la", 
+        "NJD": "nj", "SJS": "sj", "LAK": "la", 
         "UTA": "utah", "VEG": "vgk", "VGK": "vgk", "MTL": "mtl", 
-        "WSH": "wsh", "CGY": "cgy", "WPG": "wpg",
+        "CGY": "cgy", "WPG": "wpg",
         "TBL": "lightning", # High contrast variant
         "WSH": "capitals"    # High contrast variant
     }
@@ -68,6 +68,13 @@ st.caption("THE UNOFFICIAL FANTASY HOCKEY EXPANSION")
 cats = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK']
 g_cats = ['W', 'GAA', 'SV%', 'SHO']
 all_strategy_cats = cats + g_cats
+
+cats = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK']
+g_cats = ['W', 'GAA', 'SV%', 'SHO']
+all_strategy_cats = cats + g_cats
+
+# DEFAULT — overridden by Control Center selections below
+weights = {cat: 1.0 for cat in all_strategy_cats}
 
 # This expander acts as a dropdown menu at the top of the page
 with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
@@ -142,7 +149,14 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                 with c_sync:
                     if st.button(f"🔄 Sync Data", use_container_width=True):
                         with st.spinner("Pulling fresh data..."):
-                            fetch_yahoo_data(leagues_dict[selected_league_name])
+                            yahoo_df = fetch_yahoo_data(leagues_dict[selected_league_name])
+                            st.session_state['yahoo_data'] = yahoo_df
+                            guid = st.session_state['yahoo_token_data'].get('guid', 'unknown')
+                            records = yahoo_df.to_dict(orient='records')
+                            for rec in records:
+                                rec['guid'] = guid
+                            supabase.table('yahoo_league_cache').delete().eq('guid', guid).execute()
+                            supabase.table('yahoo_league_cache').insert(records).execute()
                             st.success("Synced!")
                             st.rerun()
                 with c_dis:
@@ -152,7 +166,18 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
             else:
                 st.warning("No hockey leagues found.")
 
+    selected_pos = st.multiselect("Position Filter", ['C', 'L', 'R', 'D', 'G'], default=['C', 'L', 'R', 'D', 'G'], key="global_pos_filter")
+
 st.divider()
+
+# --- RESTORE YAHOO DATA FROM SUPABASE ON FRESH SESSION ---
+if 'yahoo_data' not in st.session_state:
+    if 'yahoo_token_data' in st.session_state:
+        guid = st.session_state['yahoo_token_data'].get('guid')
+        if guid:
+            cached = supabase.table('yahoo_league_cache').select('*').eq('guid', guid).execute()
+            if cached.data:
+                st.session_state['yahoo_data'] = pd.DataFrame(cached.data)
 
 # --- GLOBAL DATA CALCULATION ---
 calc_season = season_choice if 'season_choice' in locals() else "20252026"
@@ -227,7 +252,7 @@ if evaluated_df.empty:
     st.stop()
 
 # --- UI LAYOUT ---
-tab1, tab2, tab3, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📊 DASHBOARD", "📅 SCHEDULE", "⚖️ WAR ROOM", "📈 TRENDS", "🦅 WIRE HAWK", "🏆 POWER RANKINGS", "⚔️ MATCHUP", "🔮 PLAYOFF PRIMER"])
 
 # =========================================
@@ -278,7 +303,10 @@ with tab1:
 
         num_teams = 12 
         try:
-            y_data = pd.read_csv("yahoo_export.csv")
+            if 'yahoo_data' not in st.session_state:
+                st.info("Sync your Yahoo league in the Control Center above.")
+                st.stop()
+            y_data = st.session_state['yahoo_data']
             y_data['match_key'] = y_data['name'].apply(clean_name)
             actual_teams = y_data['Fantasy_Team'].nunique()
             if actual_teams > 0: num_teams = actual_teams
@@ -297,10 +325,6 @@ with tab1:
         st.markdown("### 🎯 Unified Player Value Dashboard")
         st.caption(f"Players are sorted by their **NexusScore**. Color Key: 🟩 = Your Roster | ⬛ = Taken | Blank = Free Agent. (Separator lines every {num_teams} players).")
 
-        col_f, col_s = st.columns([3, 1])
-        with col_f:
-            selected_pos = st.multiselect("Filter Position", ['C', 'L', 'R', 'D', 'G'], default=['C', 'L', 'R', 'D', 'G'], key="dash_pos")
-        
         final = final[final['Pos'].isin(selected_pos)] if 'Pos' in final.columns else final
         final = final.sort_values(by="NexusScore", ascending=False)
         
@@ -568,9 +592,9 @@ with tab3:
         st.warning("No data available for player comparison.")
 
 # =========================================
-# TAB 5: TRENDS
+# TAB 4: TRENDS
 # =========================================
-with tab5:
+with tab4:
     if st.button("🚀 Run Trends"):
         with st.spinner("Crunching..."):
             df_s = get_nhl_skater_stats(calc_season, None)
@@ -582,7 +606,7 @@ with tab5:
                     for c in numeric_cols: 
                         if c in d.columns: d[c] = pd.to_numeric(d[c], errors='coerce').fillna(0)
                 
-                current_pos = selected_pos if 'selected_pos' in locals() else ['C', 'L', 'R', 'D']
+                current_pos = selected_pos
                 df_s = df_s[df_s['Pos'].isin(current_pos)]; df_r = df_r[df_r['Pos'].isin(current_pos)]
                 
                 z_s = calculate_z_scores(df_s, cats); z_r = calculate_z_scores(df_r, cats)
@@ -611,17 +635,20 @@ with tab5:
                     )
 
 # =========================================
-# TAB 6: WIRE HAWK (Advanced Scout & FAs)
+# TAB 5: WIRE HAWK (Advanced Scout & FAs)
 # =========================================
-with tab6:
+with tab5:
     st.subheader("🦅 THE WIRE HAWK")
     st.caption("Cross-references your synced Yahoo league against the global PuckNexus calculation engine. Use the Control Center above to sync your league.")
     
-    target_file = "yahoo_export.csv" 
+    if 'yahoo_data' not in st.session_state:
+        st.info("Sync your Yahoo league in the Control Center above.")
+        st.stop()
+    yahoo_df = st.session_state['yahoo_data']
     
     if 'final' in locals() and not final.empty:
         try:
-            y_data = pd.read_csv(target_file)
+            y_data = yahoo_df
             
             wire_df = final.copy()
             wire_df['match_key'] = wire_df['Player'].str.lower().str.strip()
@@ -730,12 +757,15 @@ with tab6:
             st.info(f"Run 'Sync with Yahoo' to load data. System message: {e}")
 
 # =========================================
-# TAB 7: LEAGUE POWER RANKINGS
+# TAB 6: LEAGUE POWER RANKINGS
 # =========================================
-with tab7:
+with tab6:
     st.header("🏆 League Power Rankings")
     try:
-        yahoo_df = pd.read_csv("yahoo_export.csv")
+        if 'yahoo_data' not in st.session_state:
+            st.info("Sync your Yahoo league in the Control Center above.")
+            st.stop()
+        yahoo_df = st.session_state['yahoo_data']
         
         # 1. Define Category Columns to Pull (based on your active sidebar weights)
         active_cats = [c for c in cats if weights[c] > 0]
@@ -778,16 +808,18 @@ with tab7:
         st.plotly_chart(fig2, use_container_width=True)
         
     except FileNotFoundError:
-        st.warning("⚠️ yahoo_export.csv not found. Run 'Sync with Yahoo' in the Control Center.")
+        st.warning("⚠️ No league data found. Run 'Sync with Yahoo' in the Control Center.")
 
 # =========================================
-# TAB 8: H2H MATCHUP SIMULATOR (Live Data Edition)
+# TAB 7: H2H MATCHUP SIMULATOR (Live Data Edition)
 # =========================================
-with tab8:
+with tab7:
     st.header("⚔️ H2H Matchup Simulator")
     try:
-        target_file = "yahoo_export.csv"
-        yahoo_df = pd.read_csv(target_file)
+        if 'yahoo_data' not in st.session_state:
+            st.info("Sync your Yahoo league in the Control Center above.")
+            st.stop()
+        yahoo_df = st.session_state['yahoo_data']
         yahoo_df['match_key'] = yahoo_df['name'].str.lower().str.strip()
 
         # Identify "My Team" to auto-select it in the dropdown
@@ -927,14 +959,14 @@ with tab8:
                         use_container_width=True, hide_index=True
                     )
         else:
-            st.info("Not enough teams found in yahoo_export.csv. Ensure you have run the sync.")
+            st.info("Not enough teams found. Ensure you have run the sync.")
     except FileNotFoundError:
-        st.warning("⚠️ yahoo_export.csv not found. Run 'Sync with Yahoo' in the Control Center.")
+        st.warning("⚠️ No league data found. Run 'Sync with Yahoo' in the Control Center.")
 
 # =========================================
-# TAB 9: PLAYOFF PRIMER
+# TAB 8: PLAYOFF PRIMER
 # =========================================
-with tab9:
+with tab8:
     st.header("🔮 PLAYOFF PRIMER: Championship Schedule Matrix")
     st.caption("Regular season wins get you to the dance, but playoff schedules win championships. This matrix calculates total games and off-nights specifically for the standard fantasy hockey playoffs.")
     
