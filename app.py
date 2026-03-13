@@ -181,7 +181,6 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
 st.divider()
 
 # TEMP DEBUG
-import os
 st.write("SUPABASE_URL:", os.environ.get("SUPABASE_URL", "MISSING"))
 st.write("SUPABASE_KEY:", os.environ.get("SUPABASE_KEY", "MISSING")[:15] if os.environ.get("SUPABASE_KEY") else "MISSING")
 from supabase_config import supabase
