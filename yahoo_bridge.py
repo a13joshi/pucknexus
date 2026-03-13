@@ -137,5 +137,10 @@ def fetch_yahoo_data(selected_league_key):
         df = df.drop_duplicates(subset=['match_key'])
         return df
 
+    except Exception as e:
+        print(f"❌ fetch_yahoo_data crashed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
     finally:
         if os.path.exists(temp_oauth_file): os.remove(temp_oauth_file)
