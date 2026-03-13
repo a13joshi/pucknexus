@@ -202,6 +202,8 @@ calc_season = season_choice if 'season_choice' in locals() else "20252026"
 calc_start_date = stats_start_date if stats_start_date else None
 calc_end_date = stats_end_date if stats_end_date else None
 
+st.cache_data.clear()  # TEMP - remove after one deploy
+
 s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
 g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
 
