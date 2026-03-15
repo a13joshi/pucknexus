@@ -5,6 +5,8 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta, date
 import warnings
+from supabase_config import supabase
+
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 try:
@@ -165,11 +167,15 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                             else:
                                 st.session_state['yahoo_data'] = yahoo_df
                                 guid = st.session_state['yahoo_token_data'].get('guid', 'unknown')
-                                records = yahoo_df.to_dict(orient='records')
-                                for rec in records:
-                                    rec['guid'] = guid
-                                supabase.table('yahoo_league_cache').delete().eq('guid', guid).execute()
-                                supabase.table('yahoo_league_cache').insert(records).execute()
+                                if supabase:
+                                    try:
+                                        records = yahoo_df.astype(str).to_dict(orient='records')
+                                        for rec in records:
+                                            rec['guid'] = guid
+                                        supabase.table('yahoo_league_cache').delete().eq('guid', guid).execute()
+                                        supabase.table('yahoo_league_cache').insert(records).execute()
+                                    except Exception as e:
+                                        print(f"⚠️ Cache save failed: {e}")
                                 st.success("Synced!")
                                 st.rerun()
                 with c_dis:
