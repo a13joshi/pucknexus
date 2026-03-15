@@ -5,7 +5,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta, date
 import warnings
-from supabase_config import supabase
 
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
@@ -17,6 +16,7 @@ try:
 except Exception:
     pass  # Running locally, .env handles it
 
+from supabase_config import supabase
 
 from data_fetcher import get_nhl_skater_stats, get_nhl_goalie_stats, get_nhl_schedule, get_fantasy_weeks
 from monster_math import calculate_z_scores
