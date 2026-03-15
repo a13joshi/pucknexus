@@ -77,12 +77,14 @@ st.title("PUCKNEXUS")
 st.caption("THE UNOFFICIAL FANTASY HOCKEY EXPANSION")
 
 # --- GLOBAL CONTROL CENTER (Replaces Sidebar) ---
-cats = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK']
-g_cats = ['W', 'GAA', 'SV%', 'SHO']
-all_strategy_cats = cats + g_cats
-
-cats = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK']
-g_cats = ['W', 'GAA', 'SV%', 'SHO']
+DEFAULT_CATS = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK']
+cats = st.session_state.get('league_cats', DEFAULT_CATS)
+# Split into skater vs goalie cats
+GOALIE_CATS = ['W', 'GAA', 'SV%', 'SHO', 'L']
+cats = [c for c in cats if c not in GOALIE_CATS]
+g_cats = [c for c in st.session_state.get('league_cats', DEFAULT_CATS) if c in GOALIE_CATS]
+if not g_cats:
+    g_cats = ['W', 'GAA', 'SV%', 'SHO']
 all_strategy_cats = cats + g_cats
 
 # DEFAULT — overridden by Control Center selections below
@@ -127,7 +129,7 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
         
     with col_yahoo:
         st.markdown("### 🦅 Yahoo Live Sync")
-        from yahoo_bridge import get_yahoo_auth_url, exchange_code_for_token, get_user_leagues, fetch_yahoo_data
+        from yahoo_bridge import get_yahoo_auth_url, exchange_code_for_token, get_user_leagues, fetch_yahoo_data, get_league_cats
         
         # 1. Catch the OAuth Redirect Code from Yahoo
         if "code" in st.query_params and 'yahoo_token_data' not in st.session_state:
@@ -162,6 +164,8 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                     if st.button(f"🔄 Sync Data", use_container_width=True):
                         with st.spinner("Pulling fresh data..."):
                             yahoo_df = fetch_yahoo_data(leagues_dict[selected_league_name])
+                            league_cats = get_league_cats(leagues_dict[selected_league_name])  # ADD THIS
+
                             if yahoo_df is None or yahoo_df.empty:
                                 st.error("Sync failed — no data returned. Check your league connection.")
                             else:
