@@ -82,11 +82,34 @@ def get_user_leagues():
 
 # Yahoo stat ID → PuckNexus internal column name
 YAHOO_STAT_MAP = {
-    '1': 'G', '2': 'A', '4': '+/-', '5': 'PIM',
-    '8': 'PPP', '9': 'SHG', '11': 'SHP', '12': 'GWG',
-    '14': 'SOG', '16': 'FOW', '19': 'W', '20': 'L',
-    '21': 'GAA', '22': 'GA', '23': 'GAA', '24': 'SV%',
-    '25': 'SHO', '28': 'TOI', '31': 'HIT', '32': 'BLK'
+    '1':  'G',
+    '2':  'A',
+    '4':  '+/-',
+    '5':  'PIM',
+    '6':  'PPG',
+    '7':  'PPA',
+    '8':  'PPP',
+    '9':  'SHG',
+    '10': 'SHA',
+    '11': 'SHP',
+    '12': 'GWG',
+    '13': 'SOG',
+    '14': 'SOG',
+    '15': 'SH%',
+    '16': 'FW',
+    '18': 'GS',
+    '19': 'W',
+    '20': 'L',
+    '21': 'SHO',
+    '22': 'GA',
+    '23': 'GAA',
+    '24': 'SV%',
+    '25': 'SV',
+    '26': 'SHO',
+    '27': 'SA',
+    '28': 'TOI',
+    '31': 'HIT',
+    '32': 'BLK',
 }
 
 def get_league_cats(selected_league_key):

@@ -77,14 +77,21 @@ st.title("PUCKNEXUS")
 st.caption("THE UNOFFICIAL FANTASY HOCKEY EXPANSION")
 
 # --- GLOBAL CONTROL CENTER (Replaces Sidebar) ---
+# Stats we can actually pull from NHL API right now
+SUPPORTED_CATS = {'G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK',
+                  'W', 'GAA', 'SV%', 'SHO', 'GWG', 'SHP', 'TOI'}
+GOALIE_CATS = {'W', 'GAA', 'SV%', 'SHO', 'GA', 'SA', 'SV', 'GS', 'L'}
 DEFAULT_CATS = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK']
-cats = st.session_state.get('league_cats', DEFAULT_CATS)
-# Split into skater vs goalie cats
-GOALIE_CATS = ['W', 'GAA', 'SV%', 'SHO', 'L']
-cats = [c for c in cats if c not in GOALIE_CATS]
-g_cats = [c for c in st.session_state.get('league_cats', DEFAULT_CATS) if c in GOALIE_CATS]
+DEFAULT_G_CATS = ['W', 'GAA', 'SV%', 'SHO']
+
+raw_cats = st.session_state.get('league_cats', DEFAULT_CATS + DEFAULT_G_CATS)
+raw_cats = [c for c in raw_cats if c in SUPPORTED_CATS]
+cats = [c for c in raw_cats if c not in GOALIE_CATS]
+g_cats = [c for c in raw_cats if c in GOALIE_CATS]
+if not cats:
+    cats = DEFAULT_CATS
 if not g_cats:
-    g_cats = ['W', 'GAA', 'SV%', 'SHO']
+    g_cats = DEFAULT_G_CATS
 all_strategy_cats = cats + g_cats
 
 # DEFAULT — overridden by Control Center selections below
