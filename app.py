@@ -167,7 +167,7 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                             league_cats = get_league_cats(leagues_dict[selected_league_name])
                             if league_cats:
                                 st.session_state['league_cats'] = league_cats
-                                st.write("DEBUG league_cats:", league_cats)  # TEMP
+                                st.session_state['debug_cats'] = league_cats
                             if yahoo_df is None or yahoo_df.empty:
                                 st.error("Sync failed — no data returned. Check your league connection.")
                             else:
@@ -349,6 +349,9 @@ with tab1:
 
         st.markdown("### 🎯 Unified Player Value Dashboard")
         
+        if 'debug_cats' in st.session_state:  # TEMP
+            st.write("DEBUG cats:", st.session_state['debug_cats'])
+
         if 'yahoo_data' in st.session_state:
             view_mode = st.radio("View", ["🏒 League Pool", "🌐 Full NHL"], horizontal=True, label_visibility="collapsed")
         else:
