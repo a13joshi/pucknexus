@@ -84,36 +84,13 @@ def get_user_leagues():
 YAHOO_STAT_MAP = {
     '1': 'G', '2': 'A', '4': '+/-', '5': 'PIM',
     '8': 'PPP', '9': 'SHG', '11': 'SHP', '12': 'GWG',
-    '13': 'SOG', '14': 'FOW', '16': 'HIT', '17': 'BLK',
-    '18': 'W', '19': 'L', '21': 'GAA', '24': 'SV%',
-    '25': 'SHO', '28': 'TOI'
+    '14': 'SOG', '16': 'FOW', '19': 'W', '20': 'L',
+    '21': 'GAA', '22': 'GA', '23': 'GAA', '24': 'SV%',
+    '25': 'SHO', '28': 'TOI', '31': 'HIT', '32': 'BLK'
 }
 
-#def get_league_cats(selected_league_key):
- #   """Fetches the scoring categories active in the user's league."""
-  #  sc, temp_oauth_file = _get_yahoo_oauth_session()
-   # try:
-    #    res = sc.session.get(
-     #       f"https://fantasysports.yahooapis.com/fantasy/v2/league/{selected_league_key}/settings"
-      #  )
-       # root = ET.fromstring(res.text)
-        #ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
-        #
-        #active_cats = []
-        #for stat in root.findall('.//ns:stat', ns):
-         #   stat_id = stat.findtext('ns:stat_id', namespaces=ns)
-          #  enabled = stat.findtext('ns:enabled', namespaces=ns)
-           # if enabled == '1' and stat_id in YAHOO_STAT_MAP:
-            #    active_cats.append(YAHOO_STAT_MAP[stat_id])
-        
-        #return active_cats if active_cats else None
-    #except Exception as e:
-     #   print(f"⚠️ Could not fetch league cats: {e}")
-      #  return None
-    #finally:
-     #   if os.path.exists(temp_oauth_file): os.remove(temp_oauth_file)
-
 def get_league_cats(selected_league_key):
+    """Fetches the scoring categories active in the user's league."""
     sc, temp_oauth_file = _get_yahoo_oauth_session()
     try:
         res = sc.session.get(
@@ -122,15 +99,14 @@ def get_league_cats(selected_league_key):
         root = ET.fromstring(res.text)
         ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
         
-        raw = []
+        active_cats = []
         for stat in root.findall('.//ns:stat', ns):
             stat_id = stat.findtext('ns:stat_id', namespaces=ns)
             enabled = stat.findtext('ns:enabled', namespaces=ns)
-            name = stat.findtext('ns:name', namespaces=ns)
-            if enabled == '1':
-                raw.append(f"{stat_id}={name}")
+            if enabled == '1' and stat_id in YAHOO_STAT_MAP:
+                active_cats.append(YAHOO_STAT_MAP[stat_id])
         
-        return raw  # Return raw for debugging
+        return active_cats if active_cats else None
     except Exception as e:
         print(f"⚠️ Could not fetch league cats: {e}")
         return None
