@@ -85,7 +85,8 @@ def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
                         'team_abbrev': 'Team', 'position_code': 'Pos',
                         'gp': 'GP', 'goals': 'G', 'assists': 'A', 'points': 'PTS',
                         'plus_minus': '+/-', 'pim': 'PIM', 'ppp': 'PPP', 
-                        'shots': 'SOG', 'hits': 'HIT', 'blocks': 'BLK'
+                        'shots': 'SOG', 'hits': 'HIT', 'blocks': 'BLK',
+                        'shp': 'SHP', 'gwg': 'GWG', 'toi': 'TOI'
                     })
         except Exception as e:
             print(f"⚠️ Cache check failed or table empty: {e}")
@@ -131,15 +132,21 @@ def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
         else:
             combined = df_s.copy()
 
-        # Fetch TOI from bios endpoint
-        bio_url = "https://api.nhle.com/stats/rest/en/skater/bios"
-        bio_params = params.copy()
-        if "sort" in bio_params: del bio_params["sort"]
+        # Fetch TOI from timeonice endpoint
+        bio_url = "https://api.nhle.com/stats/rest/en/skater/timeonice"
+        bio_params = {
+            "isAggregate": "false",
+            "isGame": "false",
+            "cayenneExp": f"seasonId={season} and gameTypeId=2"
+        }
+        if start_date: bio_params["cayenneExp"] += f" and gameDate >= \"{start_date}\""
+        if end_date: bio_params["cayenneExp"] += f" and gameDate <= \"{end_date}\""
+        if start_date or end_date: bio_params["isAggregate"] = "true"
         df_bio = _fetch_all(bio_url, bio_params)
         if not df_bio.empty and 'timeOnIcePerGame' in df_bio.columns:
             df_bio['playerId'] = df_bio['playerId'].astype(int)
             df_bio = df_bio[['playerId', 'timeOnIcePerGame']].rename(columns={'timeOnIcePerGame': 'TOI'})
-            combined = pd.merge(combined, df_bio, on='playerId', how='left')
+            combined = pd.merge(combined, df_bio, on='playerId', how='left', suffixes=('', '_toi'))
 
         for c in ['HIT', 'BLK']: 
             if c not in combined.columns: combined[c] = 0
@@ -149,25 +156,33 @@ def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
             'skaterFullName': 'Player', 'teamAbbrevs': 'Team', 'positionCode': 'Pos',
             'gamesPlayed': 'GP', 'goals': 'G', 'assists': 'A', 'points': 'PTS',
             'plusMinus': '+/-', 'penaltyMinutes': 'PIM', 'ppPoints': 'PPP', 'shots': 'SOG',
-            'shPoints': 'SHP', 'gameWinningGoals': 'GWG',  'SHP': 'shp', 'GWG': 'gwg', 'TOI': 'toi'
+            'shPoints': 'SHP', 'gameWinningGoals': 'GWG'
         }
-        
+
         final_cols = ['playerId'] + [c for c in rename_map.keys() if c in combined.columns] + ['HIT', 'BLK']
         final_df = combined[final_cols].rename(columns=rename_map)
 
+        # Add TOI after rename
+        if 'TOI' in combined.columns:
+            final_df['TOI'] = combined['TOI'].values
+
         # Only update Supabase if it's a true full season pull
         if not final_df.empty and is_full_season:
-            upload_df = final_df.rename(columns={
-                'playerId': 'player_id', 'Player': 'player_name', 
-                'Team': 'team_abbrev', 'Pos': 'position_code',
-                'GP': 'gp', 'G': 'goals', 'A': 'assists', 'PTS': 'points',
-                '+/-': 'plus_minus', 'PIM': 'pim', 'PPP': 'ppp', 
-                'SOG': 'shots', 'HIT': 'hits', 'BLK': 'blocks'
-            }).drop_duplicates(subset=['player_id'])
-            
-            upload_data = upload_df.to_dict(orient='records')
-            supabase.table("skater_stats").upsert(upload_data).execute()
-            print("💾 Supabase Skater Cache Updated.")
+            try:
+                upload_df = final_df.rename(columns={
+                    'playerId': 'player_id', 'Player': 'player_name', 
+                    'Team': 'team_abbrev', 'Pos': 'position_code',
+                    'GP': 'gp', 'G': 'goals', 'A': 'assists', 'PTS': 'points',
+                    '+/-': 'plus_minus', 'PIM': 'pim', 'PPP': 'ppp', 
+                    'SOG': 'shots', 'HIT': 'hits', 'BLK': 'blocks',
+                    'SHP': 'shp', 'GWG': 'gwg', 'TOI': 'toi'
+                }).drop_duplicates(subset=['player_id'])
+                upload_df = upload_df.fillna(0)
+                upload_data = upload_df.to_dict(orient='records')
+                supabase.table("skater_stats").upsert(upload_data).execute()
+                print("💾 Supabase Skater Cache Updated.")
+            except Exception as e:
+                print(f"⚠️ Supabase upsert failed (schema cache?): {e}")
             
         return final_df
 
