@@ -79,7 +79,8 @@ st.caption("THE UNOFFICIAL FANTASY HOCKEY EXPANSION")
 # --- GLOBAL CONTROL CENTER (Replaces Sidebar) ---
 # Stats we can actually pull from NHL API right now
 SUPPORTED_CATS = {'G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK',
-                  'W', 'GAA', 'SV%', 'SHO', 'GWG', 'SHP', 'TOI'}
+                  'W', 'GAA', 'SV%', 'SHO', 'GWG', 'SHP', 'TOI',
+                  'SV', 'GA', 'SA', 'L'}
 GOALIE_CATS = {'W', 'GAA', 'SV%', 'SHO', 'GA', 'SA', 'SV', 'GS', 'L'}
 DEFAULT_CATS = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK']
 DEFAULT_G_CATS = ['W', 'GAA', 'SV%', 'SHO']
