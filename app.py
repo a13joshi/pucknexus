@@ -327,9 +327,9 @@ with tab1:
         num_teams = 12 
         try:
             if 'yahoo_data' not in st.session_state:
-                st.info("Sync your Yahoo league in the Control Center above.")
-                st.stop()
-            y_data = st.session_state['yahoo_data']
+                y_data = None
+            else:
+                y_data = st.session_state['yahoo_data']
             y_data['match_key'] = y_data['name'].apply(clean_name)
             actual_teams = y_data['Fantasy_Team'].nunique()
             if actual_teams > 0: num_teams = actual_teams
@@ -346,7 +346,18 @@ with tab1:
             final['Own'] = "FA" 
 
         st.markdown("### 🎯 Unified Player Value Dashboard")
-        st.caption(f"Players are sorted by their **NexusScore**. Color Key: 🟩 = Your Roster | ⬛ = Taken | Blank = Free Agent. (Separator lines every {num_teams} players).")
+        
+        if 'yahoo_data' in st.session_state:
+            view_mode = st.radio("View", ["🏒 League Pool", "🌐 Full NHL"], horizontal=True, label_visibility="collapsed")
+        else:
+            view_mode = "🌐 Full NHL"
+            st.caption("💡 Sync your Yahoo league to enable League Pool view.")
+        
+        if view_mode == "🏒 League Pool" and 'yahoo_data' in st.session_state:
+            league_players = st.session_state['yahoo_data']['name'].str.lower().str.strip().tolist()
+            final = final[final['Player'].str.lower().str.strip().isin(league_players)]
+        
+        st.caption(f"Players sorted by **NexusScore**. 🟩 = Your Roster | ⬛ = Taken | Blank = Free Agent. (Separator lines every {num_teams} players).")
 
         final = final[final['Pos'].isin(selected_pos)] if 'Pos' in final.columns else final
         final = final.sort_values(by="NexusScore", ascending=False)
