@@ -167,6 +167,7 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                             league_cats = get_league_cats(leagues_dict[selected_league_name])
                             if league_cats:
                                 st.session_state['league_cats'] = league_cats
+                                st.write("DEBUG league_cats:", league_cats)  # TEMP
                             if yahoo_df is None or yahoo_df.empty:
                                 st.error("Sync failed — no data returned. Check your league connection.")
                             else:
