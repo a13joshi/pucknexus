@@ -89,8 +89,31 @@ YAHOO_STAT_MAP = {
     '25': 'SHO', '28': 'TOI'
 }
 
+#def get_league_cats(selected_league_key):
+ #   """Fetches the scoring categories active in the user's league."""
+  #  sc, temp_oauth_file = _get_yahoo_oauth_session()
+   # try:
+    #    res = sc.session.get(
+     #       f"https://fantasysports.yahooapis.com/fantasy/v2/league/{selected_league_key}/settings"
+      #  )
+       # root = ET.fromstring(res.text)
+        #ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
+        #
+        #active_cats = []
+        #for stat in root.findall('.//ns:stat', ns):
+         #   stat_id = stat.findtext('ns:stat_id', namespaces=ns)
+          #  enabled = stat.findtext('ns:enabled', namespaces=ns)
+           # if enabled == '1' and stat_id in YAHOO_STAT_MAP:
+            #    active_cats.append(YAHOO_STAT_MAP[stat_id])
+        
+        #return active_cats if active_cats else None
+    #except Exception as e:
+     #   print(f"⚠️ Could not fetch league cats: {e}")
+      #  return None
+    #finally:
+     #   if os.path.exists(temp_oauth_file): os.remove(temp_oauth_file)
+
 def get_league_cats(selected_league_key):
-    """Fetches the scoring categories active in the user's league."""
     sc, temp_oauth_file = _get_yahoo_oauth_session()
     try:
         res = sc.session.get(
@@ -99,14 +122,15 @@ def get_league_cats(selected_league_key):
         root = ET.fromstring(res.text)
         ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
         
-        active_cats = []
+        raw = []
         for stat in root.findall('.//ns:stat', ns):
             stat_id = stat.findtext('ns:stat_id', namespaces=ns)
             enabled = stat.findtext('ns:enabled', namespaces=ns)
-            if enabled == '1' and stat_id in YAHOO_STAT_MAP:
-                active_cats.append(YAHOO_STAT_MAP[stat_id])
+            name = stat.findtext('ns:name', namespaces=ns)
+            if enabled == '1':
+                raw.append(f"{stat_id}={name}")
         
-        return active_cats if active_cats else None
+        return raw  # Return raw for debugging
     except Exception as e:
         print(f"⚠️ Could not fetch league cats: {e}")
         return None
