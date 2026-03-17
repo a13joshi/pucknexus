@@ -65,8 +65,6 @@ def _fetch_all(url, params, limit=100):
 
 # --- SKATERS ---
 def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
-    # Determine if this is a standard full-season pull to safely use the cache
-    print(f"🔍 DEBUG: supabase={supabase}, type={type(supabase)}")  # ADD THIS
 
     is_full_season = start_date is None and (end_date is None or end_date == str(date.today()))
     
@@ -112,7 +110,6 @@ def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
         df_s = _fetch_all(summary_url, params.copy())
         if df_s.empty: return pd.DataFrame()
 
-        # FIX 1: Force Realtime aggregation for ANY custom date range
         rt_params = params.copy()
         if "sort" in rt_params: del rt_params["sort"]
         if start_date or end_date: rt_params["isAggregate"] = "true" 
@@ -134,6 +131,16 @@ def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
         else:
             combined = df_s.copy()
 
+        # Fetch TOI from bios endpoint
+        bio_url = "https://api.nhle.com/stats/rest/en/skater/bios"
+        bio_params = params.copy()
+        if "sort" in bio_params: del bio_params["sort"]
+        df_bio = _fetch_all(bio_url, bio_params)
+        if not df_bio.empty and 'timeOnIcePerGame' in df_bio.columns:
+            df_bio['playerId'] = df_bio['playerId'].astype(int)
+            df_bio = df_bio[['playerId', 'timeOnIcePerGame']].rename(columns={'timeOnIcePerGame': 'TOI'})
+            combined = pd.merge(combined, df_bio, on='playerId', how='left')
+
         for c in ['HIT', 'BLK']: 
             if c not in combined.columns: combined[c] = 0
             combined[c] = pd.to_numeric(combined[c], errors='coerce').fillna(0).astype(int)
@@ -141,13 +148,14 @@ def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
         rename_map = {
             'skaterFullName': 'Player', 'teamAbbrevs': 'Team', 'positionCode': 'Pos',
             'gamesPlayed': 'GP', 'goals': 'G', 'assists': 'A', 'points': 'PTS',
-            'plusMinus': '+/-', 'penaltyMinutes': 'PIM', 'ppPoints': 'PPP', 'shots': 'SOG'
+            'plusMinus': '+/-', 'penaltyMinutes': 'PIM', 'ppPoints': 'PPP', 'shots': 'SOG',
+            'shPoints': 'SHP', 'gameWinningGoals': 'GWG',  'SHP': 'shp', 'GWG': 'gwg', 'TOI': 'toi'
         }
         
         final_cols = ['playerId'] + [c for c in rename_map.keys() if c in combined.columns] + ['HIT', 'BLK']
         final_df = combined[final_cols].rename(columns=rename_map)
 
-        # FIX 2: Only update Supabase if it's a true full season pull
+        # Only update Supabase if it's a true full season pull
         if not final_df.empty and is_full_season:
             upload_df = final_df.rename(columns={
                 'playerId': 'player_id', 'Player': 'player_name', 
