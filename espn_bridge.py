@@ -28,10 +28,22 @@ def fetch_espn_data(league_id, year, espn_s2, swid, my_team_name=None):
 
     all_players = []
 
+    # Normalize SWID for comparison — ESPN stores with curly braces
+    swid_normalized = swid.strip().upper()
+
     # Rostered players
     for team in league.teams:
-        is_mine = (team.team_name == my_team_name) if my_team_name else False
-        manager = team.owners[0].get('firstName', '') + ' ' + team.owners[0].get('lastName', '') \
+        # Match by SWID — owner id matches the SWID of the logged-in user exactly
+        is_mine = any(
+            owner.get('id', '').strip().upper() == swid_normalized
+            for owner in team.owners
+        ) if team.owners else False
+
+        # Fallback: team name match (case-insensitive) if SWID didn't match
+        if not is_mine and my_team_name:
+            is_mine = team.team_name.strip().lower() == my_team_name.strip().lower()
+
+        manager = (team.owners[0].get('firstName', '') + ' ' + team.owners[0].get('lastName', '')).strip() \
             if team.owners else 'Unknown'
 
         for player in team.roster:
