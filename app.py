@@ -19,6 +19,7 @@ except Exception:
 from supabase_config import supabase
 
 from data_fetcher import get_nhl_skater_stats, get_nhl_goalie_stats, get_nhl_schedule, get_fantasy_weeks, get_multi_week_schedule
+from goalie_intel import get_todays_goalies, calculate_sos_score, get_goalie_streaming_ranks
 from monster_math import calculate_z_scores
 
 # --- HELPER FUNCTIONS ---
@@ -285,8 +286,8 @@ if evaluated_df.empty:
     st.stop()
 
 # --- UI LAYOUT ---
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-    "📊 DASHBOARD", "📅 SCHEDULE", "⚖️ WAR ROOM", "📈 TRENDS", "🦅 WIRE HAWK", "🏆 POWER RANKINGS", "⚔️ MATCHUP", "🔮 PLAYOFF PRIMER"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+    "📊 DASHBOARD", "📅 SCHEDULE", "⚖️ WAR ROOM", "📈 TRENDS", "🦅 WIRE HAWK", "🏆 POWER RANKINGS", "⚔️ MATCHUP", "🥅 GOALIE INTEL", "🔮 PLAYOFF PRIMER"])
 
 # =========================================
 # TAB 1: DASHBOARD (The God-Board Edition)
@@ -1085,9 +1086,100 @@ with tab7:
         st.warning("⚠️ No league data found. Run 'Sync with Yahoo' in the Control Center.")
 
 # =========================================
-# TAB 8: PLAYOFF PRIMER
+# TAB 8: GOALIE INTEL
 # =========================================
 with tab8:
+    st.header("🥅 Goalie Intelligence Engine")
+    st.caption("Tonight's confirmed starters, Strength of Start scores, and streaming rankings.")
+
+    try:
+        col_l, col_r = st.columns(2)
+
+        # ── LEFT: Tonight's starters ──
+        with col_l:
+            st.subheader("🏒 Tonight's Probable Starters")
+            if st.button("🔄 Refresh Goalie Status", use_container_width=True):
+                st.session_state['today_goalies'] = get_todays_goalies()
+
+            if 'today_goalies' not in st.session_state:
+                st.session_state['today_goalies'] = get_todays_goalies()
+
+            tg = st.session_state['today_goalies']
+
+            if not tg.empty:
+                confirmed   = tg[tg['Confirmed'] == True]
+                unconfirmed = tg[tg['Confirmed'] == False]
+
+                if not confirmed.empty:
+                    st.success(f"✅ {len(confirmed)} starters confirmed")
+                    display_cols = [c for c in ['GoalieName', 'Team', 'Opponent', 'Home', 'GameTime'] if c in confirmed.columns]
+                    conf_display = confirmed[display_cols].copy()
+                    conf_display['Home'] = conf_display['Home'].apply(lambda x: '🏠 Home' if x else '✈️ Away')
+                    conf_display['GameTime'] = conf_display['GameTime'].apply(
+                        lambda x: x[11:16] + ' UTC' if isinstance(x, str) and len(x) > 10 else x
+                    )
+                    conf_display.columns = ['Goalie', 'Team', 'Opp', 'Location', 'Time']
+                    st.dataframe(conf_display, hide_index=True, use_container_width=True)
+                else:
+                    st.info("No confirmed starters yet — check back closer to game time.")
+
+                if not unconfirmed.empty:
+                    with st.expander(f"⏳ {len(unconfirmed)} games TBD"):
+                        st.dataframe(
+                            unconfirmed[['Team', 'Opponent', 'GameTime']],
+                            hide_index=True, use_container_width=True
+                        )
+            else:
+                st.info("No games today or data unavailable.")
+
+        # ── RIGHT: SoS Rankings ──
+        with col_r:
+            st.subheader("📊 Strength of Start (SoS)")
+            st.caption("0–100 composite: form, home advantage, opponent, rest.")
+
+            if not tg.empty and not g_df_global.empty:
+                scored = calculate_sos_score(tg, g_df_global)
+                if not scored.empty:
+                    sos_cols = [c for c in ['GoalieName', 'Team', 'Opponent', 'Home', 'SoS', 'Grade', 'SV%', 'W', 'GAA'] if c in scored.columns]
+                    sos_display = scored[sos_cols].copy()
+                    if 'Home' in sos_display.columns:
+                        sos_display['Home'] = sos_display['Home'].apply(lambda x: '🏠' if x else '✈️')
+                    st.dataframe(
+                        sos_display.style
+                            .background_gradient(cmap='RdYlGn', subset=['SoS'])
+                            .format({'SoS': '{:.1f}', 'SV%': '{:.3f}', 'GAA': '{:.2f}'}),
+                        hide_index=True, use_container_width=True
+                    )
+            else:
+                st.info("Run a sync or wait for goalie data to load.")
+
+        st.divider()
+
+        # ── STREAMING RANKINGS ──
+        st.subheader("🎯 Goalie Streaming Rankings — Top 20")
+        st.caption("Best streaming options based on season SV% and win rate.")
+
+        if not g_df_global.empty:
+            stream_df = get_goalie_streaming_ranks(g_df_global)
+            if not stream_df.empty:
+                st.dataframe(
+                    stream_df.style
+                        .background_gradient(cmap='RdYlGn', subset=['StreamScore'])
+                        .format({'StreamScore': '{:.1f}', 'SV%': '{:.3f}', 'GAA': '{:.2f}'}),
+                    hide_index=True, use_container_width=True,
+                    height=600
+                )
+        else:
+            st.info("Goalie data not loaded yet.")
+
+    except Exception as e:
+        st.error(f"Goalie Intel error: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+# TAB 9: PLAYOFF PRIMER
+# =========================================
+with tab9:
     st.header("🔮 PLAYOFF PRIMER: Championship Schedule Matrix")
     st.caption("Regular season wins get you to the dance, but playoff schedules win championships. This matrix calculates total games and off-nights specifically for the standard fantasy hockey playoffs.")
     
