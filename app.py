@@ -137,68 +137,94 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
         weights = {cat: 0.0 if cat in punt_cats else 1.0 for cat in all_strategy_cats}
         
     with col_yahoo:
-        st.markdown("### 🦅 Yahoo Live Sync")
+        st.markdown("### 🏒 League Sync")
         from yahoo_bridge import get_yahoo_auth_url, exchange_code_for_token, get_user_leagues, fetch_yahoo_data, get_league_cats
-        
-        # 1. Catch the OAuth Redirect Code from Yahoo
-        if "code" in st.query_params and 'yahoo_token_data' not in st.session_state:
-            auth_code = st.query_params["code"]
-            with st.spinner("Authenticating..."):
-                try:
-                    st.session_state['yahoo_token_data'] = exchange_code_for_token(auth_code)
-                    st.session_state['available_leagues'] = get_user_leagues()
-                    st.query_params.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Login failed: {e}")
 
-        # 2. Yahoo UI State Machine
-        if 'yahoo_token_data' not in st.session_state:
-            try:
-                auth_url = get_yahoo_auth_url()
-                
-                # Reverting to the native button due to Streamlit Cloud sandbox limits
-                st.link_button("🟣 Login with Yahoo", auth_url, use_container_width=True)
-                
-                st.caption("Securely connect to pull live rosters. (This will open a new, authenticated tab).")
-            except Exception as e:
-                st.error(f"Streamlit Vault Error: Missing {e} in secrets.")
-        else:
-            leagues_dict = st.session_state.get('available_leagues', {})
-            if leagues_dict:
-                selected_league_name = st.selectbox("Active League", options=list(leagues_dict.keys()), label_visibility="collapsed")
-                
-                c_sync, c_dis = st.columns(2)
-                with c_sync:
-                    if st.button(f"🔄 Sync Data", use_container_width=True):
-                        with st.spinner("Pulling fresh data..."):
-                            yahoo_df = fetch_yahoo_data(leagues_dict[selected_league_name])
-                            league_cats = get_league_cats(leagues_dict[selected_league_name])
+        platform = st.radio("Platform", ["Yahoo", "ESPN"], horizontal=True, key="platform_choice")
+
+        if platform == "Yahoo":
+            # 1. Catch the OAuth Redirect Code from Yahoo
+            if "code" in st.query_params and 'yahoo_token_data' not in st.session_state:
+                auth_code = st.query_params["code"]
+                with st.spinner("Authenticating..."):
+                    try:
+                        st.session_state['yahoo_token_data'] = exchange_code_for_token(auth_code)
+                        st.session_state['available_leagues'] = get_user_leagues()
+                        st.query_params.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Login failed: {e}")
+
+            # 2. Yahoo UI State Machine
+            if 'yahoo_token_data' not in st.session_state:
+                try:
+                    auth_url = get_yahoo_auth_url()
+                    st.link_button("🟣 Login with Yahoo", auth_url, use_container_width=True)
+                    st.caption("Securely connect to pull live rosters.")
+                except Exception as e:
+                    st.error(f"Streamlit Vault Error: Missing {e} in secrets.")
+            else:
+                leagues_dict = st.session_state.get('available_leagues', {})
+                if leagues_dict:
+                    selected_league_name = st.selectbox("Active League", options=list(leagues_dict.keys()), label_visibility="collapsed")
+                    c_sync, c_dis = st.columns(2)
+                    with c_sync:
+                        if st.button("🔄 Sync Data", use_container_width=True):
+                            with st.spinner("Pulling fresh data..."):
+                                yahoo_df = fetch_yahoo_data(leagues_dict[selected_league_name])
+                                league_cats = get_league_cats(leagues_dict[selected_league_name])
+                                if league_cats:
+                                    st.session_state['league_cats'] = league_cats
+                                if yahoo_df is None or yahoo_df.empty:
+                                    st.error("Sync failed — no data returned.")
+                                else:
+                                    st.session_state['yahoo_data'] = yahoo_df
+                                    st.session_state['sync_platform'] = 'Yahoo'
+                                    guid = st.session_state['yahoo_token_data'].get('guid', 'unknown')
+                                    if supabase:
+                                        try:
+                                            records = yahoo_df.astype(str).to_dict(orient='records')
+                                            for rec in records:
+                                                rec['guid'] = guid
+                                            supabase.table('yahoo_league_cache').delete().eq('guid', guid).execute()
+                                            supabase.table('yahoo_league_cache').insert(records).execute()
+                                        except Exception as e:
+                                            print(f"⚠️ Cache save failed: {e}")
+                                    st.success("Synced!")
+                                    st.rerun()
+                    with c_dis:
+                        if st.button("Disconnect", type="tertiary", use_container_width=True):
+                            del st.session_state['yahoo_token_data']
+                            st.rerun()
+                else:
+                    st.warning("No hockey leagues found.")
+
+        else:  # ESPN
+            from espn_bridge import fetch_espn_data, get_espn_league_cats
+            st.caption("Enter your ESPN league details. Cookies found in Chrome DevTools → Application → Cookies → espn.com")
+            espn_lid  = st.text_input("ESPN League ID", key="espn_lid")
+            espn_year = st.text_input("Season Year", value="2026", key="espn_year")
+            espn_s2   = st.text_input("espn_s2 cookie", type="password", key="espn_s2")
+            espn_swid = st.text_input("SWID cookie", type="password", key="espn_swid")
+            my_team   = st.text_input("Your Team Name (exact)", key="espn_team")
+
+            if st.button("🔄 Sync ESPN League", use_container_width=True):
+                if espn_lid and espn_s2 and espn_swid:
+                    with st.spinner("Connecting to ESPN..."):
+                        try:
+                            espn_df = fetch_espn_data(espn_lid, espn_year, espn_s2, espn_swid, my_team or None)
+                            league_cats = get_espn_league_cats(espn_lid, espn_year, espn_s2, espn_swid)
                             if league_cats:
                                 st.session_state['league_cats'] = league_cats
-                                
-                            if yahoo_df is None or yahoo_df.empty:
-                                st.error("Sync failed — no data returned. Check your league connection.")
-                            else:
-                                st.session_state['yahoo_data'] = yahoo_df
-                                guid = st.session_state['yahoo_token_data'].get('guid', 'unknown')
-                                if supabase:
-                                    try:
-                                        records = yahoo_df.astype(str).to_dict(orient='records')
-                                        for rec in records:
-                                            rec['guid'] = guid
-                                        supabase.table('yahoo_league_cache').delete().eq('guid', guid).execute()
-                                        supabase.table('yahoo_league_cache').insert(records).execute()
-                                    except Exception as e:
-                                        print(f"⚠️ Cache save failed: {e}")
-                                st.success("Synced!")
-                                st.rerun()
-                with c_dis:
-                    if st.button("Disconnect", type="tertiary", use_container_width=True):
-                        del st.session_state['yahoo_token_data']
-                        st.rerun()
-            else:
-                st.warning("No hockey leagues found.")
+                            # Same session key as Yahoo — all downstream tabs work identically
+                            st.session_state['yahoo_data'] = espn_df
+                            st.session_state['sync_platform'] = 'ESPN'
+                            st.success(f"ESPN synced: {len(espn_df)} players loaded.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"ESPN sync failed: {e}")
+                else:
+                    st.warning("Please fill in League ID, espn_s2, and SWID.")
 
     selected_pos = st.multiselect("Position Filter", ['C', 'L', 'R', 'D', 'G'], default=['C', 'L', 'R', 'D', 'G'], key="global_pos_filter")
 
@@ -1169,25 +1195,7 @@ with tab8:
         st.caption("Best streaming options based on season SV% (60%) and win rate (40%).")
 
         if not g_df_global.empty:
-            # Filter to free agents only if Yahoo is synced
-            if 'yahoo_data' in st.session_state:
-                yahoo_df_stream = st.session_state['yahoo_data']
-                fa_names = set(
-                    yahoo_df_stream[yahoo_df_stream['Status'] == 'Free Agent']['match_key'].tolist()
-                )
-                fa_goalies = g_df_global[
-                    g_df_global['Player'].str.lower().str.strip().isin(fa_names)
-                ]
-                if fa_goalies.empty:
-                    st.caption("⚠️ No free agent goalies found — showing all goalies instead.")
-                    fa_goalies = g_df_global
-                else:
-                    st.caption(f"Showing {len(fa_goalies)} free agent goalies in your league.")
-            else:
-                fa_goalies = g_df_global
-                st.caption("⚠️ Sync your Yahoo league to filter to free agents only.")
-            stream_df = get_goalie_streaming_ranks(fa_goalies)
-            
+            stream_df = get_goalie_streaming_ranks(g_df_global)
             if not stream_df.empty:
                 st.dataframe(
                     stream_df.style

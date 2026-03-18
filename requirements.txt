@@ -6,3 +6,4 @@ python-dotenv
 yahoo-fantasy-api
 yahoo-oauth
 matplotlib
+espn_api
