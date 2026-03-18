@@ -908,16 +908,11 @@ with tab7:
                     # If week just started today, use today for current stats (no yesterday data yet)
                     cw_end_str = today_str if yesterday_str < start_str else yesterday_str
                     
-                    st.write("DEBUG start_str:", start_str, "cw_end_str:", cw_end_str)
-                    test_df = get_nhl_skater_stats(calc_season, start_date=start_str, end_date=cw_end_str)
-                    st.write("DEBUG test_df rows:", len(test_df))
-                    st.stop()
-
                     active_cats = [c for c in cats if weights[c] > 0]
                     active_g_cats = [c for c in g_cats if weights.get(c, 0) > 0]
                     
                     # --- 2. CURRENT STATS (Start of week to today/yesterday) ---
-                    cw_df = load_skaters(calc_season, start_date=start_str, end_date=cw_end_str)
+                    cw_df = get_nhl_skater_stats(calc_season, start_date=start_str, end_date=cw_end_str)
                     if not cw_df.empty:
                         cw_df['match_key'] = cw_df['Player'].str.lower().str.strip()
                     else:
