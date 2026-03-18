@@ -157,7 +157,7 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                 auth_url = get_yahoo_auth_url()
                 
                 # Reverting to the native button due to Streamlit Cloud sandbox limits
-                st.link_button("🟣 Login with Yahoo", auth_url, width='stretch')
+                st.link_button("🟣 Login with Yahoo", auth_url, use_container_width=True)
                 
                 st.caption("Securely connect to pull live rosters. (This will open a new, authenticated tab).")
             except Exception as e:
@@ -169,7 +169,7 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                 
                 c_sync, c_dis = st.columns(2)
                 with c_sync:
-                    if st.button(f"🔄 Sync Data", width='stretch'):
+                    if st.button(f"🔄 Sync Data", use_container_width=True):
                         with st.spinner("Pulling fresh data..."):
                             yahoo_df = fetch_yahoo_data(leagues_dict[selected_league_name])
                             league_cats = get_league_cats(leagues_dict[selected_league_name])
@@ -193,7 +193,7 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                                 st.success("Synced!")
                                 st.rerun()
                 with c_dis:
-                    if st.button("Disconnect", type="tertiary", width='stretch'):
+                    if st.button("Disconnect", type="tertiary", use_container_width=True):
                         del st.session_state['yahoo_token_data']
                         st.rerun()
             else:
@@ -505,7 +505,7 @@ with tab2:
                 st.dataframe(
                     team_summary[['Logo', 'Team', 'Total_Games', 'Off_Nights']].style.background_gradient(cmap="Purples", subset=['Off_Nights']),
                     column_config={"Logo": st.column_config.ImageColumn("Team", width="small")},
-                    hide_index=True, width='stretch'
+                    hide_index=True, use_container_width=True
                 )
     except Exception as e:
         st.warning(f"Could not load schedule: {e}")
@@ -627,7 +627,7 @@ with tab3:
                 st.dataframe(
                     bench_data[['Headshot', 'Player', 'Team', 'Plays Tonight', 'Opponent', sort_col]],
                     column_config={"Headshot": st.column_config.ImageColumn("Img", width="small")},
-                    hide_index=True, width='stretch'
+                    hide_index=True, use_container_width=True
                 )
             else:
                 st.warning("None of the selected players have a game scheduled for tonight!")
@@ -668,14 +668,14 @@ with tab4:
                     st.dataframe(
                         trend.sort_values('Trend', ascending=False).head(20)[cols].style.format("{:.2f}", subset=['Trend', 'S_Val', 'R_Val']).background_gradient(cmap="Greens", subset=['Trend']),
                         column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")},
-                        hide_index=True, width='stretch'
+                        hide_index=True, use_container_width=True
                     )
                 with c2: 
                     st.subheader("❄️ Cooling Down")
                     st.dataframe(
                         trend.sort_values('Trend', ascending=True).head(20)[cols].style.format("{:.2f}", subset=['Trend', 'S_Val', 'R_Val']).background_gradient(cmap="Reds_r", subset=['Trend']),
                         column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")},
-                        hide_index=True, width='stretch'
+                        hide_index=True, use_container_width=True
                     )
 
 # =========================================
@@ -838,7 +838,7 @@ with tab6:
         fig1 = px.bar(team_power, x='NexusScore', y='Fantasy_Team', orientation='h', 
                      color='NexusScore', color_continuous_scale='viridis', text_auto='.2f')
         fig1.update_layout(height=400, showlegend=False)
-        st.plotly_chart(fig1, width='stretch')
+        st.plotly_chart(fig1, use_container_width=True)
         
         st.divider()
         
@@ -849,7 +849,7 @@ with tab6:
                      labels={'value': 'Total NexusScore', 'variable': 'Category'})
         
         fig2.update_layout(height=600, barmode='relative', legend_title_text='Categories')
-        st.plotly_chart(fig2, width='stretch')
+        st.plotly_chart(fig2, use_container_width=True)
         
     except FileNotFoundError:
         st.warning("⚠️ No league data found. Run 'Sync with Yahoo' in the Control Center.")
@@ -879,7 +879,7 @@ with tab7:
             with col1: team_a = st.selectbox("Team A", teams, index=default_idx_a)
             with col2: team_b = st.selectbox("Team B", teams, index=default_idx_b)
 
-            if st.button("🔮 Run Live Matchup Engine", width='stretch'):
+            if st.button("🔮 Run Live Matchup Engine", use_container_width=True):
                 with st.spinner(f"Crunching live weekly stats and simulating remaining schedule based on {timeframe} trends..."):
                     # --- 1. TIMEFRAME & SPLIT LOGIC ---
                     today_date = date.today()
@@ -1034,7 +1034,7 @@ with tab7:
                         df_cur = pd.DataFrame(current_data)
                         st.dataframe(
                             df_cur.style.highlight_max(subset=[team_a, team_b], color='#2e7b50', axis=1).format({team_a: "{:.0f}", team_b: "{:.0f}"}), 
-                            width='stretch', hide_index=True
+                            use_container_width=True, hide_index=True
                         )
                         
                     with col_rem:
@@ -1043,7 +1043,7 @@ with tab7:
                         df_rem = pd.DataFrame(rem_data)
                         st.dataframe(
                             df_rem.style.highlight_max(subset=[team_a, team_b], color='#2e7b50', axis=1).format({team_a: "{:.1f}", team_b: "{:.1f}"}), 
-                            width='stretch', hide_index=True
+                            use_container_width=True, hide_index=True
                         )
                         
                     st.subheader("🏆 Final Projected Box Score")
@@ -1051,7 +1051,7 @@ with tab7:
                     df_final = pd.DataFrame(final_data)
                     st.dataframe(
                         df_final.style.highlight_max(subset=[team_a, team_b], color='#2e7b50', axis=1).format({team_a: "{:.1f}", team_b: "{:.1f}"}), 
-                        width='stretch', hide_index=True
+                        use_container_width=True, hide_index=True
                     )
         else:
             st.info("Not enough teams found. Ensure you have run the sync.")
@@ -1113,7 +1113,7 @@ with tab8:
                             "Logo": st.column_config.ImageColumn("Team", width="small"),
                             "Championship Score": st.column_config.ProgressColumn("Edge", min_value=0, max_value=20, format="%d")
                         },
-                        hide_index=True, width='stretch', height=600
+                        hide_index=True, use_container_width=True, height=600
                     )
                 
                 with col_advice:
