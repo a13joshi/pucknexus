@@ -894,6 +894,9 @@ with tab7:
                     
                     active_cats = [c for c in cats if weights[c] > 0]
                     active_g_cats = [c for c in g_cats if weights.get(c, 0) > 0]
+                    # Fallback: if no goalie cats in weights, use whatever is in g_df_global
+                    if not active_g_cats:
+                        active_g_cats = [c for c in DEFAULT_G_CATS if c in g_df_global.columns]
                     
                     # --- 2. CURRENT STATS (Start of week to Yesterday) ---
                     cw_df = load_skaters(calc_season, start_date=start_str, end_date=yesterday_str)
