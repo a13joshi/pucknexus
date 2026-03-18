@@ -295,3 +295,34 @@ def get_nhl_schedule(start_date=None):
             schedule[date_str] = games
         return schedule
     except: return {}
+
+def get_multi_week_schedule(num_weeks=8):
+    """
+    Returns game counts per team for the next num_weeks fantasy weeks.
+    Each week entry: { team: { 'GP': int, 'OFF': int (off-night games) } }
+    Off-nights = Mon, Wed, Fri, Sun (days with fewer games = more value)
+    """
+    weeks = get_fantasy_weeks()
+    today = date.today()
+    future_weeks = [w for w in weeks if w['end'] >= today][:num_weeks]
+    week_data = {}
+
+    for week in future_weeks:
+        label     = week['label']
+        start_str = str(week['start'])
+        end_str   = str(week['end'])
+        sched     = get_nhl_schedule(start_str)
+        week_data[label] = {}
+
+        for d, games in sched.items():
+            if start_str <= d <= end_str:
+                dt     = datetime.strptime(d, '%Y-%m-%d')
+                is_off = dt.weekday() in [0, 2, 4, 6]  # Mon, Wed, Fri, Sun
+                for team in games.keys():
+                    if team not in week_data[label]:
+                        week_data[label][team] = {'GP': 0, 'OFF': 0}
+                    week_data[label][team]['GP'] += 1
+                    if is_off:
+                        week_data[label][team]['OFF'] += 1
+
+    return week_data, future_weeks

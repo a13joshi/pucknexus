@@ -18,7 +18,7 @@ except Exception:
 
 from supabase_config import supabase
 
-from data_fetcher import get_nhl_skater_stats, get_nhl_goalie_stats, get_nhl_schedule, get_fantasy_weeks
+from data_fetcher import get_nhl_skater_stats, get_nhl_goalie_stats, get_nhl_schedule, get_fantasy_weeks, get_multi_week_schedule
 from monster_math import calculate_z_scores
 
 # --- HELPER FUNCTIONS ---
@@ -470,43 +470,70 @@ with tab1:
 # TAB 2: SCHEDULE
 # =========================================
 with tab2:
-    st.header("📅 Weekly Schedule & Off-Nights")
-    st.caption("Maximize your games played by targeting teams playing on light nights (Off-Nights: Mon, Wed, Fri, Sun).")
-    
+    st.header("📅 Multi-Week Schedule Grid")
+    st.caption("Game counts and off-nights per team for upcoming fantasy weeks. Green = 4+ games, Yellow = 3 games, Red = 2 or fewer.")
+
     try:
-        today_date = date.today()
-        weeks = get_fantasy_weeks()
-        current_week = next((w for w in weeks if w['start'] <= today_date <= w['end']), weeks[0])
-        
-        start_str = str(current_week['start'])
-        end_str = str(current_week['end'])
-        
-        st.markdown(f"**Current Fantasy Week:** `{start_str}` to `{end_str}`")
-        
-        week_sched = get_nhl_schedule(start_str)
-        if week_sched:
-            sched_data = []
-            for d, games in week_sched.items():
-                if start_str <= d <= end_str:
-                    dt = datetime.strptime(d, "%Y-%m-%d")
-                    is_off_night = dt.weekday() in [0, 2, 4, 6] 
-                    for team, opp in games.items():
-                        sched_data.append({'Team': team, 'Date': d, 'Off-Night': is_off_night})
-            
-            if sched_data:
-                sdf = pd.DataFrame(sched_data)
-                team_summary = sdf.groupby('Team').agg(
-                    Total_Games=('Date', 'count'),
-                    Off_Nights=('Off-Night', 'sum')
-                ).reset_index().sort_values(by=['Off_Nights', 'Total_Games'], ascending=[False, False])
-                
-                team_summary['Logo'] = team_summary['Team'].apply(get_team_logo)
-                
-                st.dataframe(
-                    team_summary[['Logo', 'Team', 'Total_Games', 'Off_Nights']].style.background_gradient(cmap="Purples", subset=['Off_Nights']),
-                    column_config={"Logo": st.column_config.ImageColumn("Team", width="small")},
-                    hide_index=True, use_container_width=True
-                )
+        col_left, col_right = st.columns([3, 1])
+        with col_left:
+            lookahead = st.slider("Weeks to display", min_value=1, max_value=8, value=4)
+        with col_right:
+            show_offnights = st.checkbox("Show off-nights", value=True)
+
+        with st.spinner("Loading schedule data..."):
+            week_data, future_weeks = get_multi_week_schedule(lookahead)
+
+        if week_data:
+            # Build grid rows
+            all_teams = set()
+            for w in future_weeks[:lookahead]:
+                all_teams.update(week_data.get(w['label'], {}).keys())
+
+            rows = []
+            for team in sorted(all_teams):
+                row = {'Team': team}
+                total_gp = 0
+                total_off = 0
+                for w in future_weeks[:lookahead]:
+                    td = week_data.get(w['label'], {}).get(team, {})
+                    gp  = td.get('GP', 0)
+                    off = td.get('OFF', 0)
+                    total_gp  += gp
+                    total_off += off
+                    if show_offnights:
+                        row[w['label']] = f"{gp}G / {off}off"
+                    else:
+                        row[w['label']] = f"{gp}G"
+                row['Total GP']  = total_gp
+                row['Off-Nights'] = total_off
+                rows.append(row)
+
+            grid_df = pd.DataFrame(rows).sort_values('Total GP', ascending=False)
+            week_cols = [w['label'] for w in future_weeks[:lookahead]]
+
+            def color_cell(val):
+                try:
+                    gp = int(str(val).split('G')[0])
+                    if gp >= 4: return 'background-color:#1a4a2e; color:white'
+                    elif gp == 3: return 'background-color:#4a3a00; color:white'
+                    else: return 'background-color:#4a1a1a; color:white'
+                except: return ''
+
+            styled = grid_df.style\
+                .applymap(color_cell, subset=week_cols)\
+                .background_gradient(cmap='Greens', subset=['Total GP'])
+
+            st.dataframe(
+                styled,
+                hide_index=True,
+                use_container_width=True,
+                height=min(60 + len(grid_df) * 35, 800)
+            )
+
+            st.caption(f"🟢 4+ games &nbsp;&nbsp; 🟡 3 games &nbsp;&nbsp; 🔴 ≤2 games &nbsp;&nbsp; Off-nights = Mon/Wed/Fri/Sun")
+        else:
+            st.warning("Could not load schedule data.")
+
     except Exception as e:
         st.warning(f"Could not load schedule: {e}")
 
