@@ -157,7 +157,7 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                 auth_url = get_yahoo_auth_url()
                 
                 # Reverting to the native button due to Streamlit Cloud sandbox limits
-                st.link_button("🟣 Login with Yahoo", auth_url, use_container_width=True)
+                st.link_button("🟣 Login with Yahoo", auth_url, width='stretch')
                 
                 st.caption("Securely connect to pull live rosters. (This will open a new, authenticated tab).")
             except Exception as e:
@@ -169,7 +169,7 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                 
                 c_sync, c_dis = st.columns(2)
                 with c_sync:
-                    if st.button(f"🔄 Sync Data", use_container_width=True):
+                    if st.button(f"🔄 Sync Data", width='stretch'):
                         with st.spinner("Pulling fresh data..."):
                             yahoo_df = fetch_yahoo_data(leagues_dict[selected_league_name])
                             league_cats = get_league_cats(leagues_dict[selected_league_name])
@@ -193,7 +193,7 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
                                 st.success("Synced!")
                                 st.rerun()
                 with c_dis:
-                    if st.button("Disconnect", type="tertiary", use_container_width=True):
+                    if st.button("Disconnect", type="tertiary", width='stretch'):
                         del st.session_state['yahoo_token_data']
                         st.rerun()
             else:
@@ -505,7 +505,7 @@ with tab2:
                 st.dataframe(
                     team_summary[['Logo', 'Team', 'Total_Games', 'Off_Nights']].style.background_gradient(cmap="Purples", subset=['Off_Nights']),
                     column_config={"Logo": st.column_config.ImageColumn("Team", width="small")},
-                    hide_index=True, use_container_width=True
+                    hide_index=True, width='stretch'
                 )
     except Exception as e:
         st.warning(f"Could not load schedule: {e}")
@@ -627,7 +627,7 @@ with tab3:
                 st.dataframe(
                     bench_data[['Headshot', 'Player', 'Team', 'Plays Tonight', 'Opponent', sort_col]],
                     column_config={"Headshot": st.column_config.ImageColumn("Img", width="small")},
-                    hide_index=True, use_container_width=True
+                    hide_index=True, width='stretch'
                 )
             else:
                 st.warning("None of the selected players have a game scheduled for tonight!")
@@ -668,14 +668,14 @@ with tab4:
                     st.dataframe(
                         trend.sort_values('Trend', ascending=False).head(20)[cols].style.format("{:.2f}", subset=['Trend', 'S_Val', 'R_Val']).background_gradient(cmap="Greens", subset=['Trend']),
                         column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")},
-                        hide_index=True, use_container_width=True
+                        hide_index=True, width='stretch'
                     )
                 with c2: 
                     st.subheader("❄️ Cooling Down")
                     st.dataframe(
                         trend.sort_values('Trend', ascending=True).head(20)[cols].style.format("{:.2f}", subset=['Trend', 'S_Val', 'R_Val']).background_gradient(cmap="Reds_r", subset=['Trend']),
                         column_config={"Logo": st.column_config.ImageColumn("Team", width="small"), "Headshot": st.column_config.ImageColumn("Img", width="small")},
-                        hide_index=True, use_container_width=True
+                        hide_index=True, width='stretch'
                     )
 
 # =========================================
@@ -838,7 +838,7 @@ with tab6:
         fig1 = px.bar(team_power, x='NexusScore', y='Fantasy_Team', orientation='h', 
                      color='NexusScore', color_continuous_scale='viridis', text_auto='.2f')
         fig1.update_layout(height=400, showlegend=False)
-        st.plotly_chart(fig1, use_container_width=True)
+        st.plotly_chart(fig1, width='stretch')
         
         st.divider()
         
@@ -849,7 +849,7 @@ with tab6:
                      labels={'value': 'Total NexusScore', 'variable': 'Category'})
         
         fig2.update_layout(height=600, barmode='relative', legend_title_text='Categories')
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width='stretch')
         
     except FileNotFoundError:
         st.warning("⚠️ No league data found. Run 'Sync with Yahoo' in the Control Center.")
@@ -862,7 +862,6 @@ with tab7:
     try:
         if 'yahoo_data' not in st.session_state:
             st.info("Sync your Yahoo league in the Control Center above.")
-            st.stop()
         yahoo_df = st.session_state['yahoo_data']
         yahoo_df['match_key'] = yahoo_df['name'].str.lower().str.strip()
 
@@ -880,7 +879,7 @@ with tab7:
             with col1: team_a = st.selectbox("Team A", teams, index=default_idx_a)
             with col2: team_b = st.selectbox("Team B", teams, index=default_idx_b)
 
-            if st.button("🔮 Run Live Matchup Engine", use_container_width=True):
+            if st.button("🔮 Run Live Matchup Engine", width='stretch'):
                 with st.spinner(f"Crunching live weekly stats and simulating remaining schedule based on {timeframe} trends..."):
                     # --- 1. TIMEFRAME & SPLIT LOGIC ---
                     today_date = date.today()
@@ -894,6 +893,7 @@ with tab7:
                     end_str = str(current_week['end'])
                     
                     active_cats = [c for c in cats if weights[c] > 0]
+                    active_g_cats = [c for c in g_cats if weights.get(c, 0) > 0]
                     
                     # --- 2. CURRENT STATS (Start of week to Yesterday) ---
                     cw_df = load_skaters(calc_season, start_date=start_str, end_date=yesterday_str)
@@ -901,19 +901,35 @@ with tab7:
                         cw_df['match_key'] = cw_df['Player'].str.lower().str.strip()
                     else:
                         cw_df = pd.DataFrame(columns=['match_key'] + active_cats)
+
+                    # Goalie current week stats
+                    from data_fetcher import get_nhl_goalie_stats
+                    g_cw_df = get_nhl_goalie_stats(calc_season, start_date=start_str, end_date=yesterday_str)
+                    if not g_cw_df.empty:
+                        g_cw_df['match_key'] = g_cw_df['Player'].str.lower().str.strip()
                         
-                    # --- 3. PROJECTED PER-GAME STATS (Based on Global Timeframe) ---
+                    # --- 3. PROJECTED PER-GAME STATS ---
                     proj_df = s_df_global.copy()
                     proj_df['match_key'] = proj_df['Player'].str.lower().str.strip()
                     
                     for c in active_cats:
                         if c in proj_df.columns:
                             proj_df[c] = pd.to_numeric(proj_df[c], errors='coerce').fillna(0)
-                            proj_df[f"{c}_pg"] = proj_df[c] / proj_df['GP'].clip(lower=1) # Avoid div by zero
+                            proj_df[f"{c}_pg"] = proj_df[c] / proj_df['GP'].clip(lower=1)
                         else:
                             proj_df[f"{c}_pg"] = 0.0
 
-                    # --- 4. REMAINING SCHEDULE (Today to End of Week) ---
+                    # Goalie projections
+                    g_proj_df = g_df_global.copy()
+                    g_proj_df['match_key'] = g_proj_df['Player'].str.lower().str.strip()
+                    for c in active_g_cats:
+                        if c in g_proj_df.columns:
+                            g_proj_df[c] = pd.to_numeric(g_proj_df[c], errors='coerce').fillna(0)
+                            g_proj_df[f"{c}_pg"] = g_proj_df[c] / g_proj_df['GP'].clip(lower=1)
+                        else:
+                            g_proj_df[f"{c}_pg"] = 0.0
+
+                    # --- 4. REMAINING SCHEDULE ---
                     rem_sched = get_nhl_schedule(today_str) 
                     def get_rem_games(nhl_team):
                         if not rem_sched: return 0
@@ -924,12 +940,13 @@ with tab7:
                         return count
                         
                     proj_df['Rem_G'] = proj_df['Team'].apply(get_rem_games)
+                    g_proj_df['Rem_G'] = g_proj_df['Team'].apply(get_rem_games)
 
                     # --- 5. ROSTER SPLITS ---
                     roster_a = yahoo_df[(yahoo_df['Fantasy_Team'] == team_a) & (yahoo_df['Status'] == 'Rostered')]
                     roster_b = yahoo_df[(yahoo_df['Fantasy_Team'] == team_b) & (yahoo_df['Status'] == 'Rostered')]
 
-                    # --- 6. CALCULATE TOTALS ---
+                    # --- 6. SKATER TOTALS ---
                     team_a_cw = pd.merge(roster_a, cw_df, on='match_key', how='inner') if not cw_df.empty else pd.DataFrame()
                     team_a_cur = {c: team_a_cw[c].sum() if c in team_a_cw.columns else 0 for c in active_cats}
                     
@@ -941,8 +958,21 @@ with tab7:
                     
                     team_b_proj_df = pd.merge(roster_b, proj_df, on='match_key', how='inner')
                     team_b_rem = {c: sum(row[f"{c}_pg"] * row['Rem_G'] for _, row in team_b_proj_df.iterrows()) for c in active_cats}
+
+                    # --- 6B. GOALIE TOTALS ---
+                    team_a_gcw = pd.merge(roster_a, g_cw_df, on='match_key', how='inner') if not g_cw_df.empty else pd.DataFrame()
+                    team_a_cur_g = {c: team_a_gcw[c].sum() if c in team_a_gcw.columns else 0 for c in active_g_cats}
+
+                    team_b_gcw = pd.merge(roster_b, g_cw_df, on='match_key', how='inner') if not g_cw_df.empty else pd.DataFrame()
+                    team_b_cur_g = {c: team_b_gcw[c].sum() if c in team_b_gcw.columns else 0 for c in active_g_cats}
+
+                    team_a_gproj = pd.merge(roster_a, g_proj_df, on='match_key', how='inner')
+                    team_a_rem_g = {c: sum(row[f"{c}_pg"] * row['Rem_G'] for _, row in team_a_gproj.iterrows()) for c in active_g_cats}
+
+                    team_b_gproj = pd.merge(roster_b, g_proj_df, on='match_key', how='inner')
+                    team_b_rem_g = {c: sum(row[f"{c}_pg"] * row['Rem_G'] for _, row in team_b_gproj.iterrows()) for c in active_g_cats}
                     
-                    # --- 7. COMPILE DATAFRAMES FOR UI ---
+                    # --- 7. COMPILE RESULTS ---
                     current_data, rem_data, final_data = [], [], []
                     a_wins, b_wins, ties = 0, 0, 0
                     
@@ -954,14 +984,32 @@ with tab7:
                         current_data.append({'Category': c, team_a: a_cur, team_b: b_cur})
                         rem_data.append({'Category': c, team_a: a_rem, team_b: b_rem})
                         
-                        # Determine winner (Standard Yahoo: Higher is better for all skater cats)
-                        if a_tot > b_tot:
-                            winner, a_wins = team_a, a_wins + 1
-                        elif b_tot > a_tot:
-                            winner, b_wins = team_b, b_wins + 1
-                        else:
-                            winner, ties = "Tie", ties + 1
+                        if a_tot > b_tot: winner, a_wins = team_a, a_wins + 1
+                        elif b_tot > a_tot: winner, b_wins = team_b, b_wins + 1
+                        else: winner, ties = "Tie", ties + 1
                             
+                        final_data.append({'Category': c, team_a: a_tot, team_b: b_tot, 'Winner': winner})
+
+                    # Goalie cats — GAA is inverted (lower is better)
+                    for c in active_g_cats:
+                        a_cur = team_a_cur_g.get(c, 0)
+                        b_cur = team_b_cur_g.get(c, 0)
+                        a_rem = team_a_rem_g.get(c, 0)
+                        b_rem = team_b_rem_g.get(c, 0)
+                        a_tot, b_tot = a_cur + a_rem, b_cur + b_rem
+
+                        current_data.append({'Category': c, team_a: a_cur, team_b: b_cur})
+                        rem_data.append({'Category': c, team_a: a_rem, team_b: b_rem})
+
+                        if c == 'GAA':
+                            if a_tot < b_tot: winner, a_wins = team_a, a_wins + 1
+                            elif b_tot < a_tot: winner, b_wins = team_b, b_wins + 1
+                            else: winner, ties = "Tie", ties + 1
+                        else:
+                            if a_tot > b_tot: winner, a_wins = team_a, a_wins + 1
+                            elif b_tot > a_tot: winner, b_wins = team_b, b_wins + 1
+                            else: winner, ties = "Tie", ties + 1
+
                         final_data.append({'Category': c, team_a: a_tot, team_b: b_tot, 'Winner': winner})
                         
                     # --- BUILD THE UI ---
@@ -983,7 +1031,7 @@ with tab7:
                         df_cur = pd.DataFrame(current_data)
                         st.dataframe(
                             df_cur.style.highlight_max(subset=[team_a, team_b], color='#2e7b50', axis=1).format({team_a: "{:.0f}", team_b: "{:.0f}"}), 
-                            use_container_width=True, hide_index=True
+                            width='stretch', hide_index=True
                         )
                         
                     with col_rem:
@@ -992,7 +1040,7 @@ with tab7:
                         df_rem = pd.DataFrame(rem_data)
                         st.dataframe(
                             df_rem.style.highlight_max(subset=[team_a, team_b], color='#2e7b50', axis=1).format({team_a: "{:.1f}", team_b: "{:.1f}"}), 
-                            use_container_width=True, hide_index=True
+                            width='stretch', hide_index=True
                         )
                         
                     st.subheader("🏆 Final Projected Box Score")
@@ -1000,7 +1048,7 @@ with tab7:
                     df_final = pd.DataFrame(final_data)
                     st.dataframe(
                         df_final.style.highlight_max(subset=[team_a, team_b], color='#2e7b50', axis=1).format({team_a: "{:.1f}", team_b: "{:.1f}"}), 
-                        use_container_width=True, hide_index=True
+                        width='stretch', hide_index=True
                     )
         else:
             st.info("Not enough teams found. Ensure you have run the sync.")
@@ -1062,7 +1110,7 @@ with tab8:
                             "Logo": st.column_config.ImageColumn("Team", width="small"),
                             "Championship Score": st.column_config.ProgressColumn("Edge", min_value=0, max_value=20, format="%d")
                         },
-                        hide_index=True, use_container_width=True, height=600
+                        hide_index=True, width='stretch', height=600
                     )
                 
                 with col_advice:
