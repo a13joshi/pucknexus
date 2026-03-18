@@ -19,7 +19,7 @@ except Exception:
 from supabase_config import supabase
 
 from data_fetcher import get_nhl_skater_stats, get_nhl_goalie_stats, get_nhl_schedule, get_fantasy_weeks, get_multi_week_schedule
-from goalie_intel import get_todays_goalies, calculate_sos_score, get_goalie_streaming_ranks
+from goalie_intel import get_todays_goalies, calculate_sos_score, get_goalie_streaming_ranks, GOALIE_RESOURCES
 from monster_math import calculate_z_scores
 
 # --- HELPER FUNCTIONS ---
@@ -1090,52 +1090,62 @@ with tab7:
 # =========================================
 with tab8:
     st.header("🥅 Goalie Intelligence Engine")
-    st.caption("Tonight's confirmed starters, Strength of Start scores, and streaming rankings.")
+    st.caption("Tonight's starters (confirmed, probable, or projected), Strength of Start scores, and streaming rankings.")
 
     try:
+        # External resource links
+        st.markdown("**📡 Early Goalie Reports (human-confirmed):** " + " &nbsp;|&nbsp; ".join(
+            [f"[{r['name']}]({r['url']})" for r in GOALIE_RESOURCES]
+        ))
+        st.caption("These sites post goalie confirmations from practice reports and beat reporters — usually 2–3 hours before puck drop.")
+        st.divider()
+
         col_l, col_r = st.columns(2)
 
-        # ── LEFT: Tonight's starters ──
         with col_l:
-            st.subheader("🏒 Tonight's Probable Starters")
+            st.subheader("🏒 Tonight's Starters")
             if st.button("🔄 Refresh Goalie Status", use_container_width=True):
-                st.session_state['today_goalies'] = get_todays_goalies()
+                st.session_state['today_goalies'] = get_todays_goalies(season_goalie_df=g_df_global)
 
             if 'today_goalies' not in st.session_state:
-                st.session_state['today_goalies'] = get_todays_goalies()
+                with st.spinner("Loading tonight's goalies..."):
+                    st.session_state['today_goalies'] = get_todays_goalies(season_goalie_df=g_df_global)
 
             tg = st.session_state['today_goalies']
 
             if not tg.empty:
-                confirmed   = tg[tg['Confirmed'] == True]
-                unconfirmed = tg[tg['Confirmed'] == False]
+                n_confirmed = len(tg[tg['Status'] == 'Confirmed'])
+                n_probable  = len(tg[tg['Status'] == 'Probable'])
+                n_projected = len(tg[tg['Status'].isin(['Projected', 'TBD'])])
+                scol1, scol2, scol3 = st.columns(3)
+                scol1.metric("✅ Confirmed",  n_confirmed)
+                scol2.metric("📋 Probable",   n_probable)
+                scol3.metric("📊 Projected",  n_projected)
 
-                if not confirmed.empty:
-                    st.success(f"✅ {len(confirmed)} starters confirmed")
-                    display_cols = [c for c in ['GoalieName', 'Team', 'Opponent', 'Home', 'GameTime'] if c in confirmed.columns]
-                    conf_display = confirmed[display_cols].copy()
-                    conf_display['Home'] = conf_display['Home'].apply(lambda x: '🏠 Home' if x else '✈️ Away')
-                    conf_display['GameTime'] = conf_display['GameTime'].apply(
+                def status_color(val):
+                    if val == 'Confirmed':  return 'background-color:#1a4a2e; color:white'
+                    elif val == 'Probable': return 'background-color:#1a3a5c; color:white'
+                    elif val == 'Projected': return 'background-color:#4a3a00; color:white'
+                    else: return 'background-color:#4a1a1a; color:white'
+
+                display_cols = [c for c in ['GoalieName', 'Team', 'Opponent', 'Home', 'Status', 'Note', 'GameTime'] if c in tg.columns]
+                tg_display = tg[display_cols].copy()
+                if 'Home' in tg_display.columns:
+                    tg_display['Home'] = tg_display['Home'].apply(lambda x: '🏠' if x else '✈️')
+                if 'GameTime' in tg_display.columns:
+                    tg_display['GameTime'] = tg_display['GameTime'].apply(
                         lambda x: x[11:16] + ' UTC' if isinstance(x, str) and len(x) > 10 else x
                     )
-                    conf_display.columns = ['Goalie', 'Team', 'Opp', 'Location', 'Time']
-                    st.dataframe(conf_display, hide_index=True, use_container_width=True)
-                else:
-                    st.info("No confirmed starters yet — check back closer to game time.")
-
-                if not unconfirmed.empty:
-                    with st.expander(f"⏳ {len(unconfirmed)} games TBD"):
-                        st.dataframe(
-                            unconfirmed[['Team', 'Opponent', 'GameTime']],
-                            hide_index=True, use_container_width=True
-                        )
+                st.dataframe(
+                    tg_display.style.applymap(status_color, subset=['Status']),
+                    hide_index=True, use_container_width=True
+                )
             else:
-                st.info("No games today or data unavailable.")
+                st.info("No games today or goalie data unavailable.")
 
-        # ── RIGHT: SoS Rankings ──
         with col_r:
             st.subheader("📊 Strength of Start (SoS)")
-            st.caption("0–100 composite: form, home advantage, opponent, rest.")
+            st.caption("0–100 composite: 40% form, 20% home advantage, 25% opponent, 15% rest.")
 
             if not tg.empty and not g_df_global.empty:
                 scored = calculate_sos_score(tg, g_df_global)
@@ -1155,9 +1165,8 @@ with tab8:
 
         st.divider()
 
-        # ── STREAMING RANKINGS ──
         st.subheader("🎯 Goalie Streaming Rankings — Top 20")
-        st.caption("Best streaming options based on season SV% and win rate.")
+        st.caption("Best streaming options based on season SV% (60%) and win rate (40%).")
 
         if not g_df_global.empty:
             stream_df = get_goalie_streaming_ranks(g_df_global)
