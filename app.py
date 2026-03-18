@@ -880,20 +880,6 @@ with tab7:
             with col2: team_b = st.selectbox("Team B", teams, index=default_idx_b)
 
             if st.button("🔮 Run Live Matchup Engine", use_container_width=True):
-                # --- DEBUG BLOCK ---
-                today_date = date.today()
-                yesterday_str = str(today_date - timedelta(days=1))
-                today_str = str(today_date)
-                weeks = get_fantasy_weeks()
-                current_week = next((w for w in weeks if w['start'] <= today_date <= w['end']), weeks[0])
-                start_str = str(current_week['start'])
-                end_str = str(current_week['end'])
-                cw_end_str = today_str if yesterday_str < start_str else yesterday_str
-                st.write("DEBUG start_str:", start_str, "cw_end_str:", cw_end_str)
-                test_df = get_nhl_skater_stats(calc_season, start_date=start_str, end_date=cw_end_str)
-                st.write("DEBUG test_df rows:", len(test_df))
-                st.stop()
-                # --- END DEBUG ---
                 with st.spinner(f"Crunching live weekly stats and simulating remaining schedule based on {timeframe} trends..."):
                     # --- 1. TIMEFRAME & SPLIT LOGIC ---
                     today_date = date.today()
