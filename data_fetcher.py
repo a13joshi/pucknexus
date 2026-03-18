@@ -66,7 +66,7 @@ def _fetch_all(url, params, limit=100):
 # --- SKATERS ---
 def get_nhl_skater_stats(season="20252026", start_date=None, end_date=None):
 
-    is_full_season = start_date is None and (end_date is None or end_date == str(date.today()))
+    is_full_season = start_date is None and end_date is None
     
     # --- PHASE 2: SUPABASE CACHE CHECK ---
     if is_full_season:
