@@ -205,8 +205,8 @@ with st.expander("📡 GLOBAL CONTROL CENTER & YAHOO SYNC", expanded=True):
             espn_lid  = st.text_input("ESPN League ID", key="espn_lid")
             espn_year = st.text_input("Season Year", value="2026", key="espn_year")
             espn_s2   = st.text_input("espn_s2 cookie", type="password", key="espn_s2")
-            espn_swid = st.text_input("SWID cookie", type="password", key="espn_swid")
-            st.caption("Your team is auto-detected from your SWID.")
+            espn_swid = st.text_input("SWID cookie (curly braces optional)", type="password", key="espn_swid")
+            st.caption("Your team is auto-detected from your SWID — no team name needed.")
 
             if st.button("🔄 Sync ESPN League", use_container_width=True):
                 if espn_lid and espn_s2 and espn_swid:

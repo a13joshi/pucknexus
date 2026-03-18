@@ -28,18 +28,21 @@ def fetch_espn_data(league_id, year, espn_s2, swid, my_team_name=None):
 
     all_players = []
 
-    # Normalize SWID for comparison — ESPN stores with curly braces
-    swid_normalized = swid.strip().upper()
+    # Normalize SWID — add curly braces if user omitted them
+    swid_clean = swid.strip()
+    if not swid_clean.startswith('{'): swid_clean = '{' + swid_clean
+    if not swid_clean.endswith('}'): swid_clean = swid_clean + '}'
+    swid_normalized = swid_clean.upper()
 
     # Rostered players
     for team in league.teams:
-        # Match by SWID — owner id matches the SWID of the logged-in user exactly
+        # Match by SWID — works regardless of whether user entered braces or not
         is_mine = any(
             owner.get('id', '').strip().upper() == swid_normalized
             for owner in team.owners
         ) if team.owners else False
 
-        # Fallback: team name match (case-insensitive) if SWID didn't match
+        # Fallback: team name match if SWID didn't work
         if not is_mine and my_team_name:
             is_mine = team.team_name.strip().lower() == my_team_name.strip().lower()
 
