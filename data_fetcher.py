@@ -272,7 +272,7 @@ def get_nhl_goalie_stats(season="20252026", start_date=None, end_date=None):
         return pd.DataFrame()
 
 # --- UTILS ---
-def get_fantasy_weeks(season_start=date(2025, 10, 7), num_weeks=26):
+def get_fantasy_weeks(season_start=date(2025, 10, 6), num_weeks=26):
     weeks = []
     curr = season_start
     for i in range(1, num_weeks + 1):
