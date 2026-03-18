@@ -1169,7 +1169,25 @@ with tab8:
         st.caption("Best streaming options based on season SV% (60%) and win rate (40%).")
 
         if not g_df_global.empty:
-            stream_df = get_goalie_streaming_ranks(g_df_global)
+            # Filter to free agents only if Yahoo is synced
+            if 'yahoo_data' in st.session_state:
+                yahoo_df_stream = st.session_state['yahoo_data']
+                fa_names = set(
+                    yahoo_df_stream[yahoo_df_stream['Status'] == 'Free Agent']['match_key'].tolist()
+                )
+                fa_goalies = g_df_global[
+                    g_df_global['Player'].str.lower().str.strip().isin(fa_names)
+                ]
+                if fa_goalies.empty:
+                    st.caption("⚠️ No free agent goalies found — showing all goalies instead.")
+                    fa_goalies = g_df_global
+                else:
+                    st.caption(f"Showing {len(fa_goalies)} free agent goalies in your league.")
+            else:
+                fa_goalies = g_df_global
+                st.caption("⚠️ Sync your Yahoo league to filter to free agents only.")
+            stream_df = get_goalie_streaming_ranks(fa_goalies)
+            
             if not stream_df.empty:
                 st.dataframe(
                     stream_df.style
