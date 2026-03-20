@@ -393,15 +393,19 @@ def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.6
     # ── 3. Goalie projections ─────────────────────────────────────────────────
     g_season = get_nhl_goalie_stats(season)
     g_recent = get_nhl_goalie_stats(season, start_date=recent_start)
-    goalie_stat_cols  = [c for c in ['W', 'GAA', 'SV%', 'SHO'] if c in g_season.columns]
-    goalie_rate_cols  = ['GAA', 'SV%']  # already rates — do not divide by GP
-    goalie_result     = pd.DataFrame()
+    goalie_stat_cols = [c for c in ['W', 'GAA', 'SV%', 'SHO'] if c in g_season.columns]
+    goalie_rate_cols = ['GAA', 'SV%']   # already rates — do not divide by GP
+    goalie_result    = pd.DataFrame()
+
+    # Caps for per-game rates to prevent small-sample inflation
+    GOALIE_RATE_CAPS = {'W': 0.70, 'SHO': 0.20}  # max W/GP and SHO/GP
 
     if not g_season.empty:
         dg_s = g_season.copy()
         dg_s['GP'] = pd.to_numeric(dg_s['GP'], errors='coerce').fillna(1).clip(lower=1)
         for c in goalie_stat_cols:
             dg_s[c] = pd.to_numeric(dg_s[c], errors='coerce').fillna(0)
+            # Rate stats: use directly; count stats: divide by GP
             dg_s[f"{c}_s_pg"] = dg_s[c] if c in goalie_rate_cols else dg_s[c] / dg_s['GP']
 
         if not g_recent.empty:
@@ -410,7 +414,12 @@ def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.6
             for c in goalie_stat_cols:
                 dg_r[c] = pd.to_numeric(dg_r[c], errors='coerce').fillna(0)
                 dg_r[f"{c}_r_pg"] = dg_r[c] if c in goalie_rate_cols else dg_r[c] / dg_r['GP']
-            gmerged = pd.merge(dg_s, dg_r[['Player'] + [f"{c}_r_pg" for c in goalie_stat_cols]], on='Player', how='left')
+                # Cap count stat rates to prevent small-sample inflation
+                if c in GOALIE_RATE_CAPS:
+                    dg_r[f"{c}_r_pg"] = dg_r[f"{c}_r_pg"].clip(upper=GOALIE_RATE_CAPS[c])
+            # Only use recent data if goalie had at least 3 recent starts
+            dg_r_min = dg_r[dg_r['GP'] >= 3]
+            gmerged = pd.merge(dg_s, dg_r_min[['Player'] + [f"{c}_r_pg" for c in goalie_stat_cols]], on='Player', how='left')
         else:
             gmerged = dg_s.copy()
             for c in goalie_stat_cols:
@@ -418,13 +427,16 @@ def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.6
 
         gmerged['Rem_GP'] = gmerged['Team'].map(rem_games_by_team).fillna(0).astype(int)
         for c in goalie_stat_cols:
+            # Fall back to season rate if no recent data
             r_pg = gmerged.get(f"{c}_r_pg", gmerged[f"{c}_s_pg"]).fillna(gmerged[f"{c}_s_pg"])
-            gmerged[f"{c}_blended"] = (recent_weight * r_pg + season_weight * gmerged[f"{c}_s_pg"])
+            blended = recent_weight * r_pg + season_weight * gmerged[f"{c}_s_pg"]
             if c in goalie_rate_cols:
+                # Rate stats: blended value IS the projected rate
                 precision = 2 if c == 'GAA' else 3
-                gmerged[c] = gmerged[f"{c}_blended"].round(precision)
+                gmerged[c] = blended.round(precision)
             else:
-                gmerged[c] = (gmerged[f"{c}_blended"] * gmerged['Rem_GP']).round(1)
+                # Count stats: blended per-game rate × remaining games
+                gmerged[c] = (blended * gmerged['Rem_GP']).round(1)
 
         gkeep = ['Player', 'Team', 'Rem_GP'] + goalie_stat_cols
         gkeep = [c for c in gkeep if c in gmerged.columns]
