@@ -209,6 +209,13 @@ g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
 
 # Blended ROS projections — computed separately and stored in session state
 ros_projections = st.session_state.get('ros_projections', None)
+
+# Force clear stale/empty cached projections
+if ros_projections is not None:
+    if not isinstance(ros_projections, dict) or ros_projections.get('skaters', pd.DataFrame()).empty:
+        del st.session_state['ros_projections']
+        ros_projections = None
+
 if projection_mode == "Blended ROS" and timeframe == "Full Season":
     league_end_date = st.session_state.get('league_end_date', None)
     end_label = f"to {league_end_date}" if league_end_date else "to end of NHL regular season"
