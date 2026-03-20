@@ -335,19 +335,14 @@ def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.6
     # ── 1. Build remaining schedule game count per team ───────────────────────
     rem_games_by_team = {}
     try:
-        sched = get_nhl_schedule(today_str)
-        # get_nhl_schedule only returns one week — fetch week by week
-        check_date = date.today()
-        while str(check_date) <= end_str:
-            day_sched = get_nhl_schedule(str(check_date))
-            for d, games in day_sched.items():
-                if today_str <= d <= end_str:
-                    for team in games:
-                        rem_games_by_team[team] = rem_games_by_team.get(team, 0) + 1
-            # Advance by 7 days (schedule endpoint returns ~1 week)
-            check_date = check_date + timedelta(days=7)
-            if check_date > season_end_date + timedelta(days=7):
-                break
+        # Use existing multi-week schedule function — covers all remaining weeks efficiently
+        week_data, future_weeks = get_multi_week_schedule(num_weeks=12)
+        for week in future_weeks:
+            for team, counts in week_data.get(week['label'], {}).items():
+                # Only count games up to end_str
+                if str(week['start']) <= end_str:
+                    gp = counts.get('GP', 0)
+                    rem_games_by_team[team] = rem_games_by_team.get(team, 0) + gp
     except Exception as e:
         print(f"⚠️ Schedule fetch error: {e}")
 
