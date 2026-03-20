@@ -74,6 +74,13 @@ with st.expander("📡 GLOBAL CONTROL CENTER & LEAGUE SYNC", expanded=True):
         timeframe     = st.selectbox("📅 Timeframe", ["Full Season", "Last 14 Days", "Last 30 Days", "Custom Date Range"])
         projection_mode = st.radio("📊 Projection Mode", ["Season Stats", "Blended ROS"], horizontal=True,
                                    help="Blended ROS: 65% last 21 days + 35% season average")
+        if projection_mode == "Blended ROS":
+            stored_end = st.session_state.get('league_end_date', '')
+            manual_end = st.text_input("League end date (YYYY-MM-DD)", value=stored_end,
+                                       help="Auto-set on Yahoo sync. Override if needed.",
+                                       key="manual_league_end")
+            if manual_end and manual_end != stored_end:
+                st.session_state['league_end_date'] = manual_end
 
         stats_start_date = stats_end_date = None
         if timeframe == "Last 14 Days":
@@ -253,8 +260,19 @@ num_active_cats = max(len(active_cats), 1)
 
 # Goalie math
 if not g_df_global.empty:
-    g_min_gp       = 12 if timeframe == "Full Season" else 3
+    # In Blended ROS mode GP = remaining games, so lower the threshold
+    g_min_gp = 3 if projection_mode == "Blended ROS" else (12 if timeframe == "Full Season" else 3)
     g_df_math_pool = g_df_global[g_df_global['GP'] >= g_min_gp]
+
+    # In Blended ROS mode, restore playerId from full season goalie data
+    if projection_mode == "Blended ROS":
+        g_full = load_goalies(calc_season, None, None)
+        if not g_full.empty and 'playerId' not in g_df_math_pool.columns:
+            g_df_math_pool = pd.merge(
+                g_df_math_pool,
+                g_full[['Player', 'playerId']].drop_duplicates('Player'),
+                on='Player', how='left'
+            )
     g_pass_1 = calculate_z_scores(g_df_math_pool, {'W': False, 'GAA': True, 'SV%': False, 'SHO': False})
     if 'Total Z' in g_pass_1.columns:
         top_g = g_pass_1.nlargest(40, 'Total Z')['Player'].tolist()
