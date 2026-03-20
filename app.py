@@ -223,7 +223,7 @@ if ros_projections is not None:
         del st.session_state['ros_projections']
         ros_projections = None
 
-if projection_mode == "Blended ROS" and timeframe == "Full Season":
+if projection_mode == "Blended ROS" and timeframe == "Full Season" and "code" not in st.query_params:
     league_end_date = st.session_state.get('league_end_date', None)
     end_label = f"to {league_end_date}" if league_end_date else "to end of NHL regular season"
     if ros_projections is None:
