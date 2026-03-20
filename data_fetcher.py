@@ -391,56 +391,33 @@ def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.6
         skater_result = skater_result[skater_result['GP'] > 0]
 
     # ── 3. Goalie projections ─────────────────────────────────────────────────
+    # Goalies: use SEASON stats only for ROS projections.
+    # Recent 21-day windows are too small (6-10 starts) and create absurd projections.
+    # Season-long sample is more reliable for goalie roles and true rates.
     g_season = get_nhl_goalie_stats(season)
-    g_recent = get_nhl_goalie_stats(season, start_date=recent_start)
     goalie_stat_cols = [c for c in ['W', 'GAA', 'SV%', 'SHO'] if c in g_season.columns]
-    goalie_rate_cols = ['GAA', 'SV%']   # already rates — do not divide by GP
+    goalie_rate_cols = ['GAA', 'SV%']  # already rates — do not scale by GP
     goalie_result    = pd.DataFrame()
 
-    # Caps for per-game rates to prevent small-sample inflation
-    GOALIE_RATE_CAPS = {'W': 0.70, 'SHO': 0.20}  # max W/GP and SHO/GP
-
     if not g_season.empty:
-        dg_s = g_season.copy()
-        dg_s['GP'] = pd.to_numeric(dg_s['GP'], errors='coerce').fillna(1).clip(lower=1)
-        for c in goalie_stat_cols:
-            dg_s[c] = pd.to_numeric(dg_s[c], errors='coerce').fillna(0)
-            # Rate stats: use directly; count stats: divide by GP
-            dg_s[f"{c}_s_pg"] = dg_s[c] if c in goalie_rate_cols else dg_s[c] / dg_s['GP']
+        dg = g_season.copy()
+        dg["GP"] = pd.to_numeric(dg["GP"], errors="coerce").fillna(0)
+        dg = dg[dg["GP"] >= 25].copy()  # proven starters only
+        dg['GP'] = pd.to_numeric(dg['GP'], errors='coerce').fillna(1).clip(lower=1)
+        dg['Rem_GP'] = dg['Team'].map(rem_games_by_team).fillna(0).astype(int)
 
-        if not g_recent.empty:
-            dg_r = g_recent.copy()
-            dg_r['GP'] = pd.to_numeric(dg_r['GP'], errors='coerce').fillna(1).clip(lower=1)
-            for c in goalie_stat_cols:
-                dg_r[c] = pd.to_numeric(dg_r[c], errors='coerce').fillna(0)
-                dg_r[f"{c}_r_pg"] = dg_r[c] if c in goalie_rate_cols else dg_r[c] / dg_r['GP']
-                # Cap count stat rates to prevent small-sample inflation
-                if c in GOALIE_RATE_CAPS:
-                    dg_r[f"{c}_r_pg"] = dg_r[f"{c}_r_pg"].clip(upper=GOALIE_RATE_CAPS[c])
-            # Only use recent data if goalie had at least 3 recent starts
-            dg_r_min = dg_r[dg_r['GP'] >= 3]
-            gmerged = pd.merge(dg_s, dg_r_min[['Player'] + [f"{c}_r_pg" for c in goalie_stat_cols]], on='Player', how='left')
-        else:
-            gmerged = dg_s.copy()
-            for c in goalie_stat_cols:
-                gmerged[f"{c}_r_pg"] = gmerged[f"{c}_s_pg"]
-
-        gmerged['Rem_GP'] = gmerged['Team'].map(rem_games_by_team).fillna(0).astype(int)
         for c in goalie_stat_cols:
-            # Fall back to season rate if no recent data
-            r_pg = gmerged.get(f"{c}_r_pg", gmerged[f"{c}_s_pg"]).fillna(gmerged[f"{c}_s_pg"])
-            blended = recent_weight * r_pg + season_weight * gmerged[f"{c}_s_pg"]
+            dg[c] = pd.to_numeric(dg[c], errors='coerce').fillna(0)
             if c in goalie_rate_cols:
-                # Rate stats: blended value IS the projected rate
-                precision = 2 if c == 'GAA' else 3
-                gmerged[c] = blended.round(precision)
+                # Rates project forward as-is
+                pass
             else:
-                # Count stats: blended per-game rate × remaining games
-                gmerged[c] = (blended * gmerged['Rem_GP']).round(1)
+                # Count stats: season per-game rate × remaining games
+                dg[c] = (dg[c] / dg['GP'] * dg['Rem_GP']).round(1)
 
         gkeep = ['Player', 'Team', 'Rem_GP'] + goalie_stat_cols
-        gkeep = [c for c in gkeep if c in gmerged.columns]
-        goalie_result = gmerged[gkeep].rename(columns={'Rem_GP': 'GP'})
+        gkeep = [c for c in gkeep if c in dg.columns]
+        goalie_result = dg[gkeep].rename(columns={'Rem_GP': 'GP'})
         goalie_result = goalie_result[goalie_result['GP'] > 0]
         goalie_result['Pos'] = 'G'
 
