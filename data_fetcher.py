@@ -335,34 +335,21 @@ def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.6
     # ── 1. Build remaining schedule game count per team ───────────────────────
     rem_games_by_team = {}
     try:
-        week_data, future_weeks = get_multi_week_schedule(num_weeks=12)
-        for week in future_weeks:
-            if str(week['start']) > end_str:
-                continue
-            for team, counts in week_data.get(week['label'], {}).items():
-                gp = counts.get('GP', 0)
-                # Pro-rate partial weeks at the end
-                if str(week['end']) > end_str:
-                    # Rough estimate: half the week's games
-                    gp = max(1, gp // 2)
-                rem_games_by_team[team] = rem_games_by_team.get(team, 0) + gp
-        print(f"📅 Schedule built: {len(rem_games_by_team)} teams, sample: {dict(list(rem_games_by_team.items())[:3])}")
+        sched = get_nhl_schedule(today_str)
+        # get_nhl_schedule only returns one week — fetch week by week
+        check_date = date.today()
+        while str(check_date) <= end_str:
+            day_sched = get_nhl_schedule(str(check_date))
+            for d, games in day_sched.items():
+                if today_str <= d <= end_str:
+                    for team in games:
+                        rem_games_by_team[team] = rem_games_by_team.get(team, 0) + 1
+            # Advance by 7 days (schedule endpoint returns ~1 week)
+            check_date = check_date + timedelta(days=7)
+            if check_date > season_end_date + timedelta(days=7):
+                break
     except Exception as e:
         print(f"⚠️ Schedule fetch error: {e}")
-
-    # Fallback: if schedule fetch failed, estimate ~14 games remaining per team
-    if not rem_games_by_team:
-        print("⚠️ Schedule fetch returned empty — using fallback estimate of 14 games per team")
-        nhl_teams = [
-            'ANA','BOS','BUF','CAR','CBJ','CGY','CHI','COL','DAL','DET',
-            'EDM','FLA','LAK','MIN','MTL','NJD','NSH','NYI','NYR','OTT',
-            'PHI','PIT','SEA','SJS','STL','TBL','TOR','UTA','VAN','VGK',
-            'WSH','WPG'
-        ]
-        days_remaining = max(1, (season_end_date - date.today()).days)
-        est_games = max(5, min(20, int(days_remaining / 5.5)))
-        for t in nhl_teams:
-            rem_games_by_team[t] = est_games
 
     # ── 2. Skater projections ─────────────────────────────────────────────────
     df_season = get_nhl_skater_stats(season)
@@ -406,22 +393,23 @@ def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.6
     # ── 3. Goalie projections ─────────────────────────────────────────────────
     g_season = get_nhl_goalie_stats(season)
     g_recent = get_nhl_goalie_stats(season, start_date=recent_start)
-    goalie_stat_cols = [c for c in ['W', 'GAA', 'SV%', 'SHO'] if c in g_season.columns]
-    goalie_result    = pd.DataFrame()
+    goalie_stat_cols  = [c for c in ['W', 'GAA', 'SV%', 'SHO'] if c in g_season.columns]
+    goalie_rate_cols  = ['GAA', 'SV%']  # already rates — do not divide by GP
+    goalie_result     = pd.DataFrame()
 
     if not g_season.empty:
         dg_s = g_season.copy()
         dg_s['GP'] = pd.to_numeric(dg_s['GP'], errors='coerce').fillna(1).clip(lower=1)
         for c in goalie_stat_cols:
             dg_s[c] = pd.to_numeric(dg_s[c], errors='coerce').fillna(0)
-            dg_s[f"{c}_s_pg"] = dg_s[c] / dg_s['GP']
+            dg_s[f"{c}_s_pg"] = dg_s[c] if c in goalie_rate_cols else dg_s[c] / dg_s['GP']
 
         if not g_recent.empty:
             dg_r = g_recent.copy()
             dg_r['GP'] = pd.to_numeric(dg_r['GP'], errors='coerce').fillna(1).clip(lower=1)
             for c in goalie_stat_cols:
                 dg_r[c] = pd.to_numeric(dg_r[c], errors='coerce').fillna(0)
-                dg_r[f"{c}_r_pg"] = dg_r[c] / dg_r['GP']
+                dg_r[f"{c}_r_pg"] = dg_r[c] if c in goalie_rate_cols else dg_r[c] / dg_r['GP']
             gmerged = pd.merge(dg_s, dg_r[['Player'] + [f"{c}_r_pg" for c in goalie_stat_cols]], on='Player', how='left')
         else:
             gmerged = dg_s.copy()
@@ -432,11 +420,9 @@ def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.6
         for c in goalie_stat_cols:
             r_pg = gmerged.get(f"{c}_r_pg", gmerged[f"{c}_s_pg"]).fillna(gmerged[f"{c}_s_pg"])
             gmerged[f"{c}_blended"] = (recent_weight * r_pg + season_weight * gmerged[f"{c}_s_pg"])
-            if c == 'GAA':
-                # GAA is a rate — don't multiply by GP
-                gmerged[c] = gmerged[f"{c}_blended"].round(2)
-            elif c == 'SV%':
-                gmerged[c] = gmerged[f"{c}_blended"].round(3)
+            if c in goalie_rate_cols:
+                precision = 2 if c == 'GAA' else 3
+                gmerged[c] = gmerged[f"{c}_blended"].round(precision)
             else:
                 gmerged[c] = (gmerged[f"{c}_blended"] * gmerged['Rem_GP']).round(1)
 
