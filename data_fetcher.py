@@ -296,74 +296,144 @@ def get_nhl_schedule(start_date=None):
         return schedule
     except: return {}
 
-def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.65):
+def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.65, season_end_date=None):
     """
-    Blends recent pace with season average for ROS projections.
-    Formula: (recent_weight * recent_per_game) + ((1 - recent_weight) * season_per_game)
+    Projects remaining stats for all skaters AND goalies for the rest of the fantasy season.
+
+    For each player:
+      - Blended per-game rate = (65% × last 21 days pace) + (35% × full season pace)
+      - GP = remaining NHL games from today to season_end_date
+      - Projected stat = blended_pg_rate × remaining_GP
 
     Args:
-        season:         NHL season string e.g. "20252026"
-        recent_days:    How many days back for "recent" window (default 21)
-        recent_weight:  Weight for recent pace (default 0.65 = 65%)
+        season:           NHL season string e.g. "20252026"
+        recent_days:      Days back for recent window (default 21)
+        recent_weight:    Weight for recent pace (default 0.65)
+        season_end_date:  Last date to count games (date object or str). 
+                          Defaults to end of NHL regular season (Apr 17, 2026).
 
     Returns:
-        DataFrame with same columns as get_nhl_skater_stats() plus a 'Projection'
-        source column, using blended per-game rates scaled to remaining games.
+        Dict with keys 'skaters' and 'goalies', each a DataFrame with:
+          Player, Team, Pos, Rem_GP, and projected stat totals
     """
+    from datetime import date as date_type
+
     season_weight = 1.0 - recent_weight
     recent_start  = str(date.today() - timedelta(days=recent_days))
+    today_str     = str(date.today())
 
-    print(f"🔀 Building blended projections ({int(recent_weight*100)}% last {recent_days}d / {int(season_weight*100)}% season)...")
+    # Default end date: NHL regular season end
+    if season_end_date is None:
+        season_end_date = date_type(2026, 4, 17)
+    elif isinstance(season_end_date, str):
+        season_end_date = date_type.fromisoformat(season_end_date)
 
-    # Fetch both windows
+    end_str = str(season_end_date)
+
+    print(f"🔀 Blended ROS projections to {end_str} ({int(recent_weight*100)}% last {recent_days}d / {int(season_weight*100)}% season)...")
+
+    # ── 1. Build remaining schedule game count per team ───────────────────────
+    rem_games_by_team = {}
+    try:
+        sched = get_nhl_schedule(today_str)
+        # get_nhl_schedule only returns one week — fetch week by week
+        check_date = date.today()
+        while str(check_date) <= end_str:
+            day_sched = get_nhl_schedule(str(check_date))
+            for d, games in day_sched.items():
+                if today_str <= d <= end_str:
+                    for team in games:
+                        rem_games_by_team[team] = rem_games_by_team.get(team, 0) + 1
+            # Advance by 7 days (schedule endpoint returns ~1 week)
+            check_date = check_date + timedelta(days=7)
+            if check_date > season_end_date + timedelta(days=7):
+                break
+    except Exception as e:
+        print(f"⚠️ Schedule fetch error: {e}")
+
+    # ── 2. Skater projections ─────────────────────────────────────────────────
     df_season = get_nhl_skater_stats(season)
     df_recent = get_nhl_skater_stats(season, start_date=recent_start)
 
-    if df_season.empty:
-        return pd.DataFrame()
+    skater_stat_cols = [c for c in ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK', 'SHP', 'GWG'] if c in df_season.columns]
+    skater_result    = pd.DataFrame()
 
-    stat_cols = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK', 'SHP', 'GWG']
-    stat_cols = [c for c in stat_cols if c in df_season.columns]
+    if not df_season.empty:
+        df_s = df_season.copy()
+        df_s['GP'] = pd.to_numeric(df_s['GP'], errors='coerce').fillna(1).clip(lower=1)
+        for c in skater_stat_cols:
+            df_s[c] = pd.to_numeric(df_s[c], errors='coerce').fillna(0)
+            df_s[f"{c}_s_pg"] = df_s[c] / df_s['GP']
 
-    # Build per-game rates for season
-    df_s = df_season.copy()
-    df_s['GP'] = pd.to_numeric(df_s['GP'], errors='coerce').fillna(1).clip(lower=1)
-    for c in stat_cols:
-        df_s[c] = pd.to_numeric(df_s[c], errors='coerce').fillna(0)
-        df_s[f"{c}_s_pg"] = df_s[c] / df_s['GP']
+        if not df_recent.empty:
+            df_r = df_recent.copy()
+            df_r['GP'] = pd.to_numeric(df_r['GP'], errors='coerce').fillna(1).clip(lower=1)
+            for c in skater_stat_cols:
+                df_r[c] = pd.to_numeric(df_r[c], errors='coerce').fillna(0)
+                df_r[f"{c}_r_pg"] = df_r[c] / df_r['GP']
+            merged = pd.merge(df_s, df_r[['Player'] + [f"{c}_r_pg" for c in skater_stat_cols]], on='Player', how='left')
+        else:
+            merged = df_s.copy()
+            for c in skater_stat_cols:
+                merged[f"{c}_r_pg"] = merged[f"{c}_s_pg"]
 
-    if not df_recent.empty:
-        df_r = df_recent.copy()
-        df_r['GP'] = pd.to_numeric(df_r['GP'], errors='coerce').fillna(1).clip(lower=1)
-        for c in stat_cols:
-            df_r[c] = pd.to_numeric(df_r[c], errors='coerce').fillna(0)
-            df_r[f"{c}_r_pg"] = df_r[c] / df_r['GP']
+        # Blended rate + remaining games
+        merged['Rem_GP'] = merged['Team'].map(rem_games_by_team).fillna(0).astype(int)
+        out_rows = []
+        for c in skater_stat_cols:
+            r_pg = merged.get(f"{c}_r_pg", merged[f"{c}_s_pg"]).fillna(merged[f"{c}_s_pg"])
+            merged[f"{c}_blended"] = (recent_weight * r_pg + season_weight * merged[f"{c}_s_pg"])
+            merged[c] = (merged[f"{c}_blended"] * merged['Rem_GP']).round(1)
 
-        # Merge on Player
-        df_r_slim = df_r[['Player'] + [f"{c}_r_pg" for c in stat_cols]].copy()
-        blended = pd.merge(df_s, df_r_slim, on='Player', how='left')
-    else:
-        blended = df_s.copy()
-        for c in stat_cols:
-            blended[f"{c}_r_pg"] = blended[f"{c}_s_pg"]
+        keep = ['Player', 'Team', 'Pos', 'Rem_GP'] + skater_stat_cols
+        keep = [c for c in keep if c in merged.columns]
+        skater_result = merged[keep].rename(columns={'Rem_GP': 'GP'})
+        skater_result = skater_result[skater_result['GP'] > 0]
 
-    # Compute blended per-game rate, fill missing recent with season rate
-    for c in stat_cols:
-        r_pg = blended.get(f"{c}_r_pg", blended[f"{c}_s_pg"])
-        r_pg = r_pg.fillna(blended[f"{c}_s_pg"])
-        blended[f"{c}_blended_pg"] = (
-            recent_weight  * r_pg +
-            season_weight  * blended[f"{c}_s_pg"]
-        )
-        # Replace raw stat with blended per-game * season GP for NexusScore compatibility
-        blended[c] = blended[f"{c}_blended_pg"] * blended['GP']
+    # ── 3. Goalie projections ─────────────────────────────────────────────────
+    g_season = get_nhl_goalie_stats(season)
+    g_recent = get_nhl_goalie_stats(season, start_date=recent_start)
+    goalie_stat_cols = [c for c in ['W', 'GAA', 'SV%', 'SHO'] if c in g_season.columns]
+    goalie_result    = pd.DataFrame()
 
-    # Keep only the base columns — drop helper columns
-    keep = [c for c in df_season.columns if c in blended.columns]
-    result = blended[keep].copy()
-    result['projection_mode'] = 'blended'
+    if not g_season.empty:
+        dg_s = g_season.copy()
+        dg_s['GP'] = pd.to_numeric(dg_s['GP'], errors='coerce').fillna(1).clip(lower=1)
+        for c in goalie_stat_cols:
+            dg_s[c] = pd.to_numeric(dg_s[c], errors='coerce').fillna(0)
+            dg_s[f"{c}_s_pg"] = dg_s[c] / dg_s['GP']
 
-    return result
+        if not g_recent.empty:
+            dg_r = g_recent.copy()
+            dg_r['GP'] = pd.to_numeric(dg_r['GP'], errors='coerce').fillna(1).clip(lower=1)
+            for c in goalie_stat_cols:
+                dg_r[c] = pd.to_numeric(dg_r[c], errors='coerce').fillna(0)
+                dg_r[f"{c}_r_pg"] = dg_r[c] / dg_r['GP']
+            gmerged = pd.merge(dg_s, dg_r[['Player'] + [f"{c}_r_pg" for c in goalie_stat_cols]], on='Player', how='left')
+        else:
+            gmerged = dg_s.copy()
+            for c in goalie_stat_cols:
+                gmerged[f"{c}_r_pg"] = gmerged[f"{c}_s_pg"]
+
+        gmerged['Rem_GP'] = gmerged['Team'].map(rem_games_by_team).fillna(0).astype(int)
+        for c in goalie_stat_cols:
+            r_pg = gmerged.get(f"{c}_r_pg", gmerged[f"{c}_s_pg"]).fillna(gmerged[f"{c}_s_pg"])
+            gmerged[f"{c}_blended"] = (recent_weight * r_pg + season_weight * gmerged[f"{c}_s_pg"])
+            if c == 'GAA':
+                # GAA is a rate — don't multiply by GP
+                gmerged[c] = gmerged[f"{c}_blended"].round(2)
+            elif c == 'SV%':
+                gmerged[c] = gmerged[f"{c}_blended"].round(3)
+            else:
+                gmerged[c] = (gmerged[f"{c}_blended"] * gmerged['Rem_GP']).round(1)
+
+        gkeep = ['Player', 'Team', 'Rem_GP'] + goalie_stat_cols
+        gkeep = [c for c in gkeep if c in gmerged.columns]
+        goalie_result = gmerged[gkeep].rename(columns={'Rem_GP': 'GP'})
+        goalie_result = goalie_result[goalie_result['GP'] > 0]
+        goalie_result['Pos'] = 'G'
+
+    return {'skaters': skater_result, 'goalies': goalie_result, 'end_date': end_str}
 
 
 def get_multi_week_schedule(num_weeks=8):

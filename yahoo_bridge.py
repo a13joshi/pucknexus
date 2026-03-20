@@ -112,6 +112,43 @@ YAHOO_STAT_MAP = {
     '32': 'BLK',
 }
 
+def get_league_end_date(selected_league_key):
+    """
+    Fetches the last week of the regular season (excluding playoffs) from Yahoo league settings.
+    Returns a date object representing the last day of the last regular season fantasy week,
+    or None if unavailable.
+    """
+    sc, temp_oauth_file = _get_yahoo_oauth_session()
+    try:
+        res = sc.session.get(
+            f"https://fantasysports.yahooapis.com/fantasy/v2/league/{selected_league_key}/settings"
+        )
+        root = ET.fromstring(res.text)
+        ns = {'ns': 'http://fantasysports.yahooapis.com/fantasy/v2/base.rng'}
+
+        # end_week is the last week of the fantasy regular season
+        end_week_el = root.find('.//ns:end_week', ns)
+        if end_week_el is None:
+            return None
+
+        end_week_num = int(end_week_el.text)
+
+        # Map week number to actual date using our fantasy week generator
+        from data_fetcher import get_fantasy_weeks
+        weeks = get_fantasy_weeks()
+
+        if end_week_num <= len(weeks):
+            return weeks[end_week_num - 1]['end']
+        return None
+
+    except Exception as e:
+        print(f"⚠️ Could not fetch league end date: {e}")
+        return None
+    finally:
+        if os.path.exists(temp_oauth_file):
+            os.remove(temp_oauth_file)
+
+
 def get_league_cats(selected_league_key):
     """Fetches the scoring categories active in the user's league."""
     sc, temp_oauth_file = _get_yahoo_oauth_session()

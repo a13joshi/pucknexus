@@ -127,6 +127,11 @@ with st.expander("📡 GLOBAL CONTROL CENTER & LEAGUE SYNC", expanded=True):
                                 league_cats = get_league_cats(leagues_dict[selected_league_name])
                                 if league_cats:
                                     st.session_state['league_cats'] = league_cats
+                                # Fetch league end date for ROS projections
+                                from yahoo_bridge import get_league_end_date
+                                league_end = get_league_end_date(leagues_dict[selected_league_name])
+                                if league_end:
+                                    st.session_state['league_end_date'] = str(league_end)
                                 if yahoo_df is None or yahoo_df.empty:
                                     st.error("Sync failed — no data returned.")
                                 else:
@@ -202,22 +207,25 @@ calc_end_date   = stats_end_date   if stats_end_date   else None
 s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
 g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
 
-# Apply blended projections if mode is active (replaces skater stats for scoring only)
+# Blended ROS projections — computed separately and stored in session state
+ros_projections = st.session_state.get('ros_projections', None)
 if projection_mode == "Blended ROS" and timeframe == "Full Season":
-    with st.spinner("🔀 Building blended ROS projections..."):
-        blended = get_blended_projections(calc_season)
-        if not blended.empty:
-            # Preserve Team/Pos/playerId from season data, replace stat columns
-            stat_cols = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK', 'SHP', 'GWG']
-            meta_cols = ['Player', 'playerId', 'Team', 'Pos', 'GP']
-            for c in stat_cols:
-                if c in blended.columns and c in s_df_global.columns:
-                    s_df_global = s_df_global.copy()
-                    merge_tmp = blended[['Player', c]].rename(columns={c: f"{c}_blended"})
-                    s_df_global = pd.merge(s_df_global, merge_tmp, on='Player', how='left')
-                    s_df_global[c] = s_df_global[f"{c}_blended"].fillna(s_df_global[c])
-                    s_df_global = s_df_global.drop(columns=[f"{c}_blended"])
-            st.caption("📊 **Blended ROS Mode active** — stats reflect 65% recent pace + 35% season average.")
+    league_end_date = st.session_state.get('league_end_date', None)
+    end_label = f"to {league_end_date}" if league_end_date else "to end of NHL regular season"
+    if ros_projections is None:
+        with st.spinner(f"🔀 Building Blended ROS projections ({end_label})..."):
+            ros_projections = get_blended_projections(calc_season, season_end_date=league_end_date)
+            st.session_state['ros_projections'] = ros_projections
+    if ros_projections and not ros_projections['skaters'].empty:
+        s_df_global = ros_projections['skaters']
+    if ros_projections and not ros_projections['goalies'].empty:
+        g_df_global = ros_projections['goalies']
+    st.caption(f"📊 **Blended ROS Mode** — GP = games remaining, stats = projected totals ({end_label}). 65% recent pace + 35% season average.")
+else:
+    # Clear cached projections when switching back to Season Stats
+    if 'ros_projections' in st.session_state and projection_mode == "Season Stats":
+        del st.session_state['ros_projections']
+        ros_projections = None
 
 if timeframe != "Full Season":
     s_base = load_skaters(calc_season, None, None)
