@@ -335,16 +335,34 @@ def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.6
     # ── 1. Build remaining schedule game count per team ───────────────────────
     rem_games_by_team = {}
     try:
-        # Use existing multi-week schedule function — covers all remaining weeks efficiently
         week_data, future_weeks = get_multi_week_schedule(num_weeks=12)
         for week in future_weeks:
+            if str(week['start']) > end_str:
+                continue
             for team, counts in week_data.get(week['label'], {}).items():
-                # Only count games up to end_str
-                if str(week['start']) <= end_str:
-                    gp = counts.get('GP', 0)
-                    rem_games_by_team[team] = rem_games_by_team.get(team, 0) + gp
+                gp = counts.get('GP', 0)
+                # Pro-rate partial weeks at the end
+                if str(week['end']) > end_str:
+                    # Rough estimate: half the week's games
+                    gp = max(1, gp // 2)
+                rem_games_by_team[team] = rem_games_by_team.get(team, 0) + gp
+        print(f"📅 Schedule built: {len(rem_games_by_team)} teams, sample: {dict(list(rem_games_by_team.items())[:3])}")
     except Exception as e:
         print(f"⚠️ Schedule fetch error: {e}")
+
+    # Fallback: if schedule fetch failed, estimate ~14 games remaining per team
+    if not rem_games_by_team:
+        print("⚠️ Schedule fetch returned empty — using fallback estimate of 14 games per team")
+        nhl_teams = [
+            'ANA','BOS','BUF','CAR','CBJ','CGY','CHI','COL','DAL','DET',
+            'EDM','FLA','LAK','MIN','MTL','NJD','NSH','NYI','NYR','OTT',
+            'PHI','PIT','SEA','SJS','STL','TBL','TOR','UTA','VAN','VGK',
+            'WSH','WPG'
+        ]
+        days_remaining = max(1, (season_end_date - date.today()).days)
+        est_games = max(5, min(20, int(days_remaining / 5.5)))
+        for t in nhl_teams:
+            rem_games_by_team[t] = est_games
 
     # ── 2. Skater projections ─────────────────────────────────────────────────
     df_season = get_nhl_skater_stats(season)
