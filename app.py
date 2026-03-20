@@ -21,7 +21,7 @@ from config import SUPPORTED_CATS, GOALIE_CATS, DEFAULT_CATS, DEFAULT_G_CATS, ge
 
 # Tab renderers
 from tabs import dashboard, schedule, war_room, trends, wire_hawk, power_rankings, matchup
-from tabs import goalie_intel_tab, playoff_primer
+from tabs import goalie_intel_tab, playoff_primer, nexus_board_tab
 
 # ── Cached data loaders ───────────────────────────────────────────────────────
 @st.cache_data
@@ -325,10 +325,10 @@ else:
     final = pd.DataFrame()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "📊 DASHBOARD", "📅 SCHEDULE", "⚖️ WAR ROOM", "📈 TRENDS",
     "🦅 WIRE HAWK", "🏆 POWER RANKINGS", "⚔️ MATCHUP",
-    "🥅 GOALIE INTEL", "🔮 PLAYOFF PRIMER"
+    "🥅 GOALIE INTEL", "🗺️ NEXUSBOARD", "🔮 PLAYOFF PRIMER"
 ])
 
 dashboard.render(tab1, final, evaluated_df, evaluated_goalies, cats, g_cats, weights, selected_pos)
@@ -339,4 +339,5 @@ wire_hawk.render(tab5, final, cats, weights)
 power_rankings.render(tab6, evaluated_df, evaluated_goalies, cats, weights)
 matchup.render(tab7, s_df_global, g_df_global, cats, g_cats, weights, calc_season, timeframe, projection_mode)
 goalie_intel_tab.render(tab8, g_df_global)
-playoff_primer.render(tab9)
+nexus_board_tab.render(tab9, evaluated_df, g_df_global, cats, weights, calc_season)
+playoff_primer.render(tab10)
