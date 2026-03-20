@@ -11,11 +11,21 @@ from data_fetcher import get_nhl_schedule, get_fantasy_weeks
 
 
 # ── Opponent quality: goals allowed per game by team (lower = tougher defense) ──
+NHL_TEAM_ID_MAP = {
+    1: 'NJD', 2: 'NYI', 3: 'NYR', 4: 'PHI', 5: 'PIT',
+    6: 'BOS', 7: 'BUF', 8: 'MTL', 9: 'OTT', 10: 'TOR',
+    12: 'CAR', 13: 'FLA', 14: 'TBL', 15: 'WSH', 16: 'CHI',
+    17: 'DET', 18: 'NSH', 19: 'STL', 20: 'CGY', 21: 'COL',
+    22: 'EDM', 23: 'VAN', 24: 'ANA', 25: 'DAL', 26: 'LAK',
+    28: 'SJS', 29: 'CBJ', 30: 'MIN', 52: 'WPG', 53: 'ARI',
+    54: 'VGK', 55: 'SEA', 59: 'UTA',
+}
+
+
 def get_team_stats(season="20252026"):
     """
-    Fetches team-level goals-for and goals-against per game.
-    Returns dict: { team_abbrev: { 'gf_pg': float, 'ga_pg': float, 'pp_pct': float } }
-    Used to score opponent quality for ease calculation.
+    Fetches team-level stats for opponent quality scoring.
+    Returns dict: { team_abbrev: { 'gf_pg', 'ga_pg', 'pp_pct', 'shots_pg' } }
     """
     url = "https://api.nhle.com/stats/rest/en/team/summary"
     params = {
@@ -27,19 +37,21 @@ def get_team_stats(season="20252026"):
     }
     try:
         resp = requests.get(url, params=params, timeout=15).json()
-        data = resp.get('data', [])
         team_map = {}
-        for row in data:
-            abbrev = row.get('teamAbbrev') or row.get('triCode', '')
+        for row in resp.get('data', []):
+            team_id = row.get('teamId')
+            abbrev  = NHL_TEAM_ID_MAP.get(team_id)
+            if not abbrev:
+                continue
             gp = max(row.get('gamesPlayed', 1), 1)
-            gf = row.get('goalsFor', 0) or 0
-            ga = row.get('goalsAgainst', 0) or 0
-            pp_pct = row.get('powerPlayPct', 0) or 0
             team_map[abbrev] = {
-                'gf_pg':  round(gf / gp, 2),
-                'ga_pg':  round(ga / gp, 2),
-                'pp_pct': round(pp_pct, 1),
+                'gf_pg':    round(row.get('goalsForPerGame',     0) or 0, 3),
+                'ga_pg':    round(row.get('goalsAgainstPerGame', 0) or 0, 3),
+                'pp_pct':   round(row.get('powerPlayPct',        0) or 0, 4),
+                'shots_pg': round(row.get('shotsForPerGame',     0) or 0, 2),
+                'sa_pg':    round(row.get('shotsAgainstPerGame', 0) or 0, 2),
             }
+        print(f"📊 Team stats loaded: {len(team_map)} teams")
         return team_map
     except Exception as e:
         print(f"⚠️ Team stats fetch error: {e}")
@@ -247,13 +259,34 @@ def build_nexusboard(
             else:
                 row[d_str] = '—'
 
-        # Per-category schedule value (simplified: based on opp GA vs league avg)
-        opp_quality_delta = avg_opp_ga - league_ga_avg  # positive = facing weak defenses
+        # Per-category schedule value
+        # Based on: avg opponent GA (vs league avg) → positive = facing weaker defenses
+        opp_quality_delta = avg_opp_ga - league_ga_avg
+
+        # Also get avg opponent shots-against for SOG cats
+        opp_sa_list = [
+            team_stats.get(g['opp'], {}).get('sa_pg', 30.0)
+            for g in games.values()
+        ]
+        avg_opp_sa = sum(opp_sa_list) / max(len(opp_sa_list), 1)
+        league_sa_avg = (
+            sum(v.get('sa_pg', 30.0) for v in team_stats.values()) / max(len(team_stats), 1)
+            if team_stats else 30.0
+        )
+        opp_sa_delta = avg_opp_sa - league_sa_avg
+
         for cat in active_cats:
-            if cat in ['G', 'A', 'PPP', 'SOG']:
+            if cat in ['G', 'A', 'PPP']:
+                # Scoring cats: opponent GA delta matters most
                 row[f"{cat}V"] = round(opp_quality_delta * gp * 0.15, 2)
-            elif cat in ['HIT', 'BLK', '+/-']:
-                row[f"{cat}V"] = round(opp_quality_delta * gp * 0.08, 2)
+            elif cat in ['SOG']:
+                # SOG: opponent shots-against (how much they allow shots)
+                row[f"{cat}V"] = round(opp_sa_delta * gp * 0.08, 2)
+            elif cat in ['+/-']:
+                row[f"{cat}V"] = round(opp_quality_delta * gp * 0.10, 2)
+            elif cat in ['HIT', 'BLK']:
+                # Physical cats less opponent-dependent
+                row[f"{cat}V"] = round(opp_quality_delta * gp * 0.05, 2)
             else:
                 row[f"{cat}V"] = 0.0
 
