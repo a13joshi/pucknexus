@@ -14,7 +14,7 @@ except Exception:
     pass
 
 from supabase_config import supabase
-from data_fetcher import get_nhl_skater_stats, get_nhl_goalie_stats, get_nhl_schedule, get_fantasy_weeks, get_multi_week_schedule
+from data_fetcher import get_nhl_skater_stats, get_nhl_goalie_stats, get_nhl_schedule, get_fantasy_weeks, get_multi_week_schedule, get_blended_projections
 from goalie_intel import get_todays_goalies, calculate_sos_score, get_goalie_streaming_ranks, GOALIE_RESOURCES
 from monster_math import calculate_z_scores
 from config import SUPPORTED_CATS, GOALIE_CATS, DEFAULT_CATS, DEFAULT_G_CATS, get_team_logo, get_headshot
@@ -72,6 +72,8 @@ with st.expander("📡 GLOBAL CONTROL CENTER & LEAGUE SYNC", expanded=True):
         st.markdown("### ⚙️ Engine Settings")
         season_choice = st.selectbox("Season", ["20252026", "20242025", "20232024"])
         timeframe     = st.selectbox("📅 Timeframe", ["Full Season", "Last 14 Days", "Last 30 Days", "Custom Date Range"])
+        projection_mode = st.radio("📊 Projection Mode", ["Season Stats", "Blended ROS"], horizontal=True,
+                                   help="Blended ROS: 65% last 21 days + 35% season average")
 
         stats_start_date = stats_end_date = None
         if timeframe == "Last 14 Days":
@@ -200,6 +202,23 @@ calc_end_date   = stats_end_date   if stats_end_date   else None
 s_df_global = load_skaters(calc_season, calc_start_date, calc_end_date)
 g_df_global = load_goalies(calc_season, calc_start_date, calc_end_date)
 
+# Apply blended projections if mode is active (replaces skater stats for scoring only)
+if projection_mode == "Blended ROS" and timeframe == "Full Season":
+    with st.spinner("🔀 Building blended ROS projections..."):
+        blended = get_blended_projections(calc_season)
+        if not blended.empty:
+            # Preserve Team/Pos/playerId from season data, replace stat columns
+            stat_cols = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK', 'SHP', 'GWG']
+            meta_cols = ['Player', 'playerId', 'Team', 'Pos', 'GP']
+            for c in stat_cols:
+                if c in blended.columns and c in s_df_global.columns:
+                    s_df_global = s_df_global.copy()
+                    merge_tmp = blended[['Player', c]].rename(columns={c: f"{c}_blended"})
+                    s_df_global = pd.merge(s_df_global, merge_tmp, on='Player', how='left')
+                    s_df_global[c] = s_df_global[f"{c}_blended"].fillna(s_df_global[c])
+                    s_df_global = s_df_global.drop(columns=[f"{c}_blended"])
+            st.caption("📊 **Blended ROS Mode active** — stats reflect 65% recent pace + 35% season average.")
+
 if timeframe != "Full Season":
     s_base = load_skaters(calc_season, None, None)
     if not s_df_global.empty and not s_base.empty:
@@ -285,6 +304,6 @@ war_room.render(tab3, final, cats, weights)
 trends.render(tab4, calc_season, cats, weights, selected_pos)
 wire_hawk.render(tab5, final, cats, weights)
 power_rankings.render(tab6, evaluated_df, evaluated_goalies, cats, weights)
-matchup.render(tab7, s_df_global, g_df_global, cats, g_cats, weights, calc_season, timeframe)
+matchup.render(tab7, s_df_global, g_df_global, cats, g_cats, weights, calc_season, timeframe, projection_mode)
 goalie_intel_tab.render(tab8, g_df_global)
 playoff_primer.render(tab9)

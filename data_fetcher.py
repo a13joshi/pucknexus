@@ -296,6 +296,76 @@ def get_nhl_schedule(start_date=None):
         return schedule
     except: return {}
 
+def get_blended_projections(season="20252026", recent_days=21, recent_weight=0.65):
+    """
+    Blends recent pace with season average for ROS projections.
+    Formula: (recent_weight * recent_per_game) + ((1 - recent_weight) * season_per_game)
+
+    Args:
+        season:         NHL season string e.g. "20252026"
+        recent_days:    How many days back for "recent" window (default 21)
+        recent_weight:  Weight for recent pace (default 0.65 = 65%)
+
+    Returns:
+        DataFrame with same columns as get_nhl_skater_stats() plus a 'Projection'
+        source column, using blended per-game rates scaled to remaining games.
+    """
+    season_weight = 1.0 - recent_weight
+    recent_start  = str(date.today() - timedelta(days=recent_days))
+
+    print(f"🔀 Building blended projections ({int(recent_weight*100)}% last {recent_days}d / {int(season_weight*100)}% season)...")
+
+    # Fetch both windows
+    df_season = get_nhl_skater_stats(season)
+    df_recent = get_nhl_skater_stats(season, start_date=recent_start)
+
+    if df_season.empty:
+        return pd.DataFrame()
+
+    stat_cols = ['G', 'A', '+/-', 'PIM', 'PPP', 'SOG', 'HIT', 'BLK', 'SHP', 'GWG']
+    stat_cols = [c for c in stat_cols if c in df_season.columns]
+
+    # Build per-game rates for season
+    df_s = df_season.copy()
+    df_s['GP'] = pd.to_numeric(df_s['GP'], errors='coerce').fillna(1).clip(lower=1)
+    for c in stat_cols:
+        df_s[c] = pd.to_numeric(df_s[c], errors='coerce').fillna(0)
+        df_s[f"{c}_s_pg"] = df_s[c] / df_s['GP']
+
+    if not df_recent.empty:
+        df_r = df_recent.copy()
+        df_r['GP'] = pd.to_numeric(df_r['GP'], errors='coerce').fillna(1).clip(lower=1)
+        for c in stat_cols:
+            df_r[c] = pd.to_numeric(df_r[c], errors='coerce').fillna(0)
+            df_r[f"{c}_r_pg"] = df_r[c] / df_r['GP']
+
+        # Merge on Player
+        df_r_slim = df_r[['Player'] + [f"{c}_r_pg" for c in stat_cols]].copy()
+        blended = pd.merge(df_s, df_r_slim, on='Player', how='left')
+    else:
+        blended = df_s.copy()
+        for c in stat_cols:
+            blended[f"{c}_r_pg"] = blended[f"{c}_s_pg"]
+
+    # Compute blended per-game rate, fill missing recent with season rate
+    for c in stat_cols:
+        r_pg = blended.get(f"{c}_r_pg", blended[f"{c}_s_pg"])
+        r_pg = r_pg.fillna(blended[f"{c}_s_pg"])
+        blended[f"{c}_blended_pg"] = (
+            recent_weight  * r_pg +
+            season_weight  * blended[f"{c}_s_pg"]
+        )
+        # Replace raw stat with blended per-game * season GP for NexusScore compatibility
+        blended[c] = blended[f"{c}_blended_pg"] * blended['GP']
+
+    # Keep only the base columns — drop helper columns
+    keep = [c for c in df_season.columns if c in blended.columns]
+    result = blended[keep].copy()
+    result['projection_mode'] = 'blended'
+
+    return result
+
+
 def get_multi_week_schedule(num_weeks=8):
     """
     Returns game counts per team for the next num_weeks fantasy weeks.

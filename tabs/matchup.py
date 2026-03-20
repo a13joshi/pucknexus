@@ -5,7 +5,7 @@ from data_fetcher import get_nhl_skater_stats, get_nhl_goalie_stats, get_nhl_sch
 from config import DEFAULT_G_CATS
 
 
-def render(tab, s_df_global, g_df_global, cats, g_cats, weights, calc_season, timeframe):
+def render(tab, s_df_global, g_df_global, cats, g_cats, weights, calc_season, timeframe, projection_mode="Season Stats"):
     with tab:
         st.header("⚔️ H2H Matchup Simulator")
         try:
